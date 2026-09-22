@@ -39,6 +39,7 @@
        background:linear-gradient(135deg,var(--accent),var(--accent2));color:#2b1230;box-shadow:0 6px 18px rgba(255,126,182,.25);transition:transform .08s}
   .btn:active{transform:scale(.97)}
   .btn.ghost{background:rgba(255,255,255,.08);color:var(--fg);box-shadow:none;border:1px solid rgba(255,255,255,.14)}
+  .btn.danger{background:var(--danger);color:#fff}
   .diffs{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
   .custom{margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,.12)}
   .custom label{display:flex;justify-content:space-between;align-items:baseline;
@@ -60,7 +61,6 @@
   .pill .k{font-size:10px;letter-spacing:1.1px;color:var(--muted);text-transform:uppercase}
   .pill .v{font-size:16px;font-variant-numeric:tabular-nums;font-weight:700;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .lives{letter-spacing:1px}
-  .lives .lost{opacity:.22;filter:grayscale(1)}
   .boardwrap{flex:1;display:grid;place-content:safe center;min-height:0;min-width:0;
     overflow:auto;-webkit-overflow-scrolling:touch}
   #board{display:grid;gap:1px;background:var(--line);border:3px solid var(--line);border-radius:14px;overflow:hidden;
@@ -75,6 +75,25 @@
   /* Fertige Farbe: einheitlich abgedunkelt, innere Rasterlinien verschwinden */
   .cell.done{filter:saturate(.62) brightness(.66)}
   .cell.done svg.mk{opacity:.45}
+  /* Belegte/bewiesene Felder sind nicht mehr anklickbar … */
+  .cell.lockedcell{pointer-events:none}
+  /* … im Notizmodus aber schon, dort darf auf JEDES Feld geklickt werden. */
+  #board.notes .cell{pointer-events:auto;cursor:pointer}
+
+  /* ---- Notizmodus: hypothetische Katzen/Kreuze ---- */
+  /* Liegen als Overlay ÜBER dem echten Feldinhalt und verändern ihn nie. */
+  .cell .note{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+              z-index:2;pointer-events:none}
+  .cell .note svg{width:64%;height:64%;opacity:.72;filter:drop-shadow(0 1px 2px rgba(0,0,0,.5))}
+  .cell .note svg.nmk{width:46%;height:46%;opacity:.8;filter:none}
+  /* Hypothetische Katze zusätzlich durch gestrichelten Rahmen kenntlich */
+  .cell .note.cat::before{content:"";position:absolute;inset:8%;border:2px dashed rgba(255,255,255,.85);
+                          border-radius:7px;box-shadow:0 0 0 2px rgba(20,10,35,.35) inset}
+  #board.notes{border-style:dashed;box-shadow:0 0 0 3px rgba(255,255,255,.18),0 14px 40px rgba(0,0,0,.45)}
+  .notesbar{display:flex;justify-content:center;padding:6px 0 0}
+  .notesbar .btn{min-width:200px}
+  .notesbar .btn.on{background:rgba(255,255,255,.16);border-style:dashed;font-weight:700}
+  .hint.notes-on{display:none}
 
   /* ---- Siegesanimation ---- */
   /* Einzelne Zelle: hellt in ihrer eigenen Farbe auf und ploppt nach oben */
@@ -212,12 +231,14 @@
     <div class="pill"><div class="k">Leben</div><div class="v lives" id="hud-lives"></div></div>
   </div>
   <div class="boardwrap"><div id="board"></div></div>
+  <div class="notesbar"><button class="btn ghost" id="btn-notes" aria-pressed="false">📝 Notizmodus</button></div>
   <div class="msg" id="msg"></div>
   <div class="gamebar">
     <button class="btn ghost hint-btn big" id="btn-bighint">🐱 Tipp <small>1× pro Level · nur 10 % Punkte</small></button>
     <button class="btn ghost" id="btn-quit">Beenden</button>
   </div>
-  <div class="hint"><span id="hud-size">–</span> · 1× tippen = ✕ (ziehen für mehrere) · 2× tippen / Rechtsklick = Katze</div>
+  <div class="hint" id="hud-hint"><span id="hud-size">–</span> · 1× tippen = ✕ (ziehen für mehrere) · 2× tippen / Rechtsklick = Katze</div>
+  <div class="hint" id="notes-help" hidden>Notizmodus · Klick = hypothetische Katze setzen / entfernen · nichts wird gewertet</div>
 </section>
 
 <!-- ============ OVERLAY ============ -->
@@ -258,9 +279,6 @@ const PALETTE_DEF = [
   ['#1fa85c', 150], ['#22c4c4', 182], ['#3a7be0', 215], ['#8b53e6', 268],
   ['#e055b0', 318], ['#9c6b45',  25], ['#8d96a8', 210], ['#f5a8c0', 340]
 ];
-const PALETTE = PALETTE_DEF.map(x => x[0]);
-const HUES    = PALETTE_DEF.map(x => x[1]);
-
 /**
  * Farbvorrat für K Regionen. Bis 12 Farben die handverlesene Palette,
  * darüber hinaus per Goldenem Winkel gestreute Farbtöne mit wechselnder
@@ -705,9 +723,12 @@ function verifyLevel(lvl){
     return true;
   }
 
-  // Nicht deduktiv lösbar -> nur zulässig, wenn wenigstens eindeutig (kleine Felder)
-  return R*C <= 144 && !findSolution(R, C, reg, K, cols);
+  // Nicht deduktiv lösbar -> ablehnen. Eindeutigkeit allein genügt nicht:
+  // was der Solver nicht herleiten kann, müsste der Spieler raten – und Raten
+  // kostet in diesem Spiel Leben. Lieber ein neuer Generierungsversuch.
+  return false;
 }
+
 
 /**
  * Nachbesserung: Level ist eindeutig, aber der deduktive Solver kommt nicht durch.
@@ -867,6 +888,14 @@ const MARK_SVG = `
         stroke-width="9" stroke-linecap="round"/>
 </svg>`;
 
+/** Hypothetisches Kreuz im Notizmodus – gestrichelt und heller als das echte. */
+const NOTE_MARK_SVG = `
+<svg viewBox="0 0 100 100" aria-hidden="true" class="nmk">
+  <path d="M28 28 L72 72 M72 28 L28 72" stroke="rgba(255,255,255,.9)"
+        stroke-width="8" stroke-linecap="round" stroke-dasharray="9 8"/>
+</svg>`;
+
+
 const CAT_SVG = col => `
 <svg viewBox="0 0 100 100" aria-hidden="true">
   <path d="M22 44 L17 14 L41 28 A44 40 0 0 1 59 28 L83 14 L78 44 A34 32 0 1 1 22 44 Z"
@@ -891,6 +920,7 @@ const G = {
   board: null, cells: [], locked: false,
   fixed: new Set(), hinted: new Set(), pending: new Set(), anim: [], continueFn: null,
   lastHit: 0, hintUsed: false,
+  notes: false, noteCats: new Set(),
   levelStart: 0, timerId: null, totalTime: 0
 };
 
@@ -949,6 +979,25 @@ function initCustom(){
 function show(id){ document.querySelectorAll('.screen').forEach(s => s.classList.toggle('active', s.id === id)); }
 function overlay(html){ $('ovbox').innerHTML = html; $('ov').classList.add('active'); }
 function closeOverlay(){ $('ov').classList.remove('active'); }
+
+/**
+ * Rückfrage im Spiel-Overlay statt im Browser-Dialog.
+ * @param {{title:string, text:string, ok?:string, cancel?:string,
+ *          danger?:boolean, onOk:Function, onCancel?:Function}} o
+ */
+function confirmBox(o){
+  overlay(`
+    <h2>${o.title}</h2>
+    <p style="margin:8px 0 0;font-size:14px;line-height:1.45">${o.text}</p>
+    <div style="height:16px"></div>
+    <button class="btn${o.danger ? ' danger' : ''}" id="cb-ok">${o.ok || 'Ja'}</button>
+    <div style="height:8px"></div>
+    <button class="btn ghost" id="cb-no">${o.cancel || 'Abbrechen'}</button>
+  `);
+  $('cb-ok').onclick = () => { closeOverlay(); o.onOk(); };
+  $('cb-no').onclick = () => { closeOverlay(); if(o.onCancel) o.onCancel(); };
+}
+
 
 function updateHud(){
   $('hud-level').textContent = G.level;
@@ -1013,10 +1062,11 @@ function buildBoard(){
       b.setAttribute('aria-label', `Reihe ${r+1}, Spalte ${c+1}`);
       b.addEventListener('pointerdown', ev => {
         ev.preventDefault();
+        // Notizmodus fängt die Eingabe ab, bevor irgendeine Spiellogik greift.
+        if(G.notes){ toggleNoteCat(r, c); return; }
         if(ev.button === 2){ resetInput(); placeCat(r, c); }   // Rechtsklick = Katze
         else { dragStart(r, c); onTap(r, c); }
       });
-      b.addEventListener('contextmenu', ev => ev.preventDefault());
       board.appendChild(b);
       row.push(b);
     }
@@ -1040,6 +1090,15 @@ function paint(){
                    : st === MARK ? MARK_SVG
                    : '';
       el.classList.toggle('marked', st === MARK);
+      el._note = undefined;   // innerHTML hat das Notiz-Overlay entfernt
+    }
+
+    // Belegte/bewiesene Felder nehmen keine Klicks mehr an (kein Leben-Verlust).
+    const bl = st !== EMPTY || G.fixed.has(r * G.C + c);
+    if(el._bl !== bl){
+      el._bl = bl;
+      el.classList.toggle('lockedcell', bl);
+      el.setAttribute('aria-disabled', bl ? 'true' : 'false');
     }
 
     if(el._done !== d){
@@ -1052,6 +1111,7 @@ function paint(){
         : el._sh;
     }
   }
+  paintNotes();   // Overlays überleben jedes Neuzeichnen
 }
 /** Dunklere Variante der Regionsfarbe – für Kontrast auf dem Feld. */
 function catColor(g){
@@ -1130,7 +1190,7 @@ function cellFromPoint(x, y){
 }
 
 function dragMove(ev){
-  if(!dragging || G.locked) return;
+  if(!dragging || G.locked || G.notes) return;
   const el = cellFromPoint(ev.clientX, ev.clientY);
   if(!el) return;
   const key = el._r * G.C + el._c;
@@ -1184,9 +1244,15 @@ function wrongCross(r, c){
   revealCat(r, c, true);
 }
 
+/** Belegte oder bereits bewiesene Felder sind gesperrt – kein Klick, kein Leben. */
+function isBlocked(r, c){
+  return G.board[r][c] !== EMPTY || G.fixed.has(r * G.C + c);
+}
+
 /** Doppeltipp/Rechtsklick: Katze setzen. Jede falsche Platzierung kostet ein Leben. */
 function placeCat(r, c){
-  if(G.locked || G.board[r][c] === CAT) return;
+  if(G.locked || isBlocked(r, c)) return;
+
 
   // Eine Katze darf nur dort stehen, wo sie laut Lösung hingehört.
   // Da jedes Level eindeutig ist, ist jede andere Stelle beweisbar falsch.
@@ -1247,8 +1313,97 @@ function autoCross(r, c){
   });
 }
 
-/** Laufende Kreuz-Animation abbrechen (Levelwechsel, Spielende). */
+/* ====================== Notizmodus ======================
+   Rein visuelle Spielwiese: hypothetische Katzen werden als Overlay ÜBER das
+   echte Feld gelegt und zeigen die Kreuze, die aus ihnen folgen WÜRDEN.
+   Es gibt keine Regeln, keine Konflikte, keine Bewertung – der echte
+   Spielstand (G.board, G.fixed, G.lives, G.sol) wird nie angefasst.
+   Beim Verlassen verschwindet alles rückstandslos. */
+
+/** Notizmodus umschalten (Button unter dem Spielfeld). */
+function toggleNotes(){
+  if(G.notes){ exitNotes(); return; }
+  G.notes = true;
+  resetInput();                       // laufende Tipp-/Zieh-Erkennung verwerfen
+  syncNotesUi();
+  paintNotes();
+}
+
+/** Notizmodus verlassen und alle hypothetischen Elemente entfernen. */
+function exitNotes(){
+  if(!G.notes && !G.noteCats.size) return;
+  G.notes = false;
+  G.noteCats.clear();
+  syncNotesUi();
+  paintNotes();
+}
+
+/** Button-Beschriftung, Brett-Markierung und Hilfetext an den Modus anpassen. */
+function syncNotesUi(){
+  const btn = $('btn-notes');
+  if(btn){
+    btn.textContent = G.notes ? '✓ Notizen beenden' : '📝 Notizmodus';
+    btn.classList.toggle('on', G.notes);
+    btn.setAttribute('aria-pressed', G.notes ? 'true' : 'false');
+  }
+  const board = $('board');
+  if(board) board.classList.toggle('notes', G.notes);
+  const hint = $('hud-hint');
+  if(hint) hint.classList.toggle('notes-on', G.notes);
+  const help = $('notes-help');
+  if(help) help.hidden = !G.notes;
+}
+
+/** Hypothetische Katze auf beliebigem Feld setzen bzw. wieder entfernen. */
+function toggleNoteCat(r, c){
+  const k = r * G.C + c;
+  if(G.noteCats.has(k)) G.noteCats.delete(k);
+  else G.noteCats.add(k);
+  paintNotes();
+  vibrate(6);
+}
+
+/**
+ * Zeichnet die Overlay-Ebene neu: je hypothetischer Katze deren Reihe, Spalte,
+ * Farbregion und acht Nachbarn als hypothetisches Kreuz. Liest ausschließlich
+ * G.noteCats und G.reg – niemals den echten Spielstand.
+ */
+function paintNotes(){
+  if(!G.cells.length) return;
+
+  // Ohne Notizen: Overlays nur abräumen (billig, da _note gemerkt wird).
+  const crosses = new Set();
+  if(G.notes){
+    for(const k of G.noteCats){
+      const r = (k / G.C) | 0, c = k % G.C, g = G.reg[r][c];
+      for(let i=0;i<G.C;i++) crosses.add(r * G.C + i);                  // Reihe
+      for(let i=0;i<G.R;i++) crosses.add(i * G.C + c);                  // Spalte
+      for(let rr=0;rr<G.R;rr++) for(let cc=0;cc<G.C;cc++)               // Farbe
+        if(G.reg[rr][cc] === g) crosses.add(rr * G.C + cc);
+      for(let dr=-1;dr<=1;dr++) for(let dc=-1;dc<=1;dc++){              // Nachbarn
+        const nr=r+dr, nc=c+dc;
+        if(nr>=0&&nr<G.R&&nc>=0&&nc<G.C) crosses.add(nr * G.C + nc);
+      }
+    }
+    for(const k of G.noteCats) crosses.delete(k);   // Katze sticht ihr eigenes Kreuz
+  }
+
+  for(let r=0;r<G.R;r++) for(let c=0;c<G.C;c++){
+    const el = G.cells[r][c], k = r * G.C + c;
+    const want = !G.notes ? '' : G.noteCats.has(k) ? 'cat' : crosses.has(k) ? 'mark' : '';
+    if(el._note === want) continue;
+    el._note = want;
+
+    let ov = el.querySelector('.note');
+    if(!want){ if(ov) ov.remove(); continue; }
+    if(!ov){ ov = document.createElement('div'); el.appendChild(ov); }
+    ov.className = 'note ' + want;
+    ov.innerHTML = want === 'cat' ? CAT_SVG(catColor(G.reg[r][c])) : NOTE_MARK_SVG;
+  }
+}
+
 function stopAnim(){
+  exitNotes();           // Notizmodus überlebt keinen Level-/Spielwechsel
   G.anim.forEach(clearTimeout);
   G.anim = [];
   G.pending.clear();
@@ -1493,6 +1648,15 @@ function nextLevel(){
         if(verifyLevel(cand)) lvl = cand;
       }
     }
+    if(!lvl){
+      // Nie ohne geprüftes Level weitermachen – lieber sauber abbrechen als
+      // ein rate-lastiges Feld ausliefern oder mit TypeError hängen bleiben.
+      overlay(`<h2>Kein Level gefunden</h2>
+               <p>Es ließ sich gerade kein Level erzeugen, das ohne Raten lösbar ist.</p>
+               <button class="btn" onclick="closeOverlay();nextLevel()">Nochmal versuchen</button>`);
+      G.locked = true;
+      return;
+    }
     Object.assign(G, {R:lvl.R, C:lvl.C, K:lvl.K, reg:lvl.reg, sol:lvl.sol, colors:lvl.colors});
     G.board = mk2d(G.R, G.C, EMPTY);
     G.fixed = new Set();
@@ -1578,7 +1742,14 @@ function showHighscores(highlight){
     ${list.length ? '<div style="height:8px"></div><button class="btn ghost" id="clr">Liste löschen</button>' : ''}
   `);
   $('close').onclick = () => { closeOverlay(); show('s-menu'); };
-  if($('clr')) $('clr').onclick = () => { if(confirm('Bestenliste wirklich löschen?')){ saveHS([]); showHighscores(-1); } };
+  if($('clr')) $('clr').onclick = () => confirmBox({
+    title: 'Bestenliste löschen?',
+    text: 'Alle Einträge werden unwiderruflich entfernt.',
+    ok: 'Löschen', danger: true,
+    onOk:     () => { saveHS([]); showHighscores(-1); },
+    onCancel: () => showHighscores(highlight)      // zurück zur Liste
+  });
+
 }
 function escapeHtml(s){ return String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
 
@@ -1586,9 +1757,18 @@ function escapeHtml(s){ return String(s).replace(/[&<>"']/g, m => ({'&':'&amp;',
 $('btn-start').onclick = startGame;
 $('btn-hs').onclick = () => showHighscores(-1);
 $('btn-bighint').onclick = hintCat;
-$('btn-quit').onclick = () => {
-  if(confirm('Spiel beenden? Dein Punktestand kann eingetragen werden.')){ G.lives = 0; gameOver(); }
-};
+$('btn-notes').onclick = toggleNotes;
+// Kontextmenü fürs ganze Brett unterdrücken: Rechtsklick = Katze setzen.
+// Muss am Brett hängen, nicht an der Zelle – gesetzte Zellen sind
+// `pointer-events:none`, das Event landet dann direkt beim Brett.
+$('board').addEventListener('contextmenu', ev => ev.preventDefault());
+$('btn-quit').onclick = () => confirmBox({
+  title: 'Spiel beenden?',
+  text: 'Dein Punktestand kann danach in die Bestenliste eingetragen werden.',
+  ok: 'Beenden', danger: true, cancel: 'Weiterspielen',
+  onOk: () => { G.lives = 0; gameOver(); }
+});
+
 document.addEventListener('pointermove', dragMove);
 document.addEventListener('pointerup', dragEnd);
 document.addEventListener('pointercancel', dragEnd);
