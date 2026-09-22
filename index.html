@@ -75,10 +75,11 @@
   /* Fertige Farbe: einheitlich abgedunkelt, innere Rasterlinien verschwinden */
   .cell.done{filter:saturate(.62) brightness(.66)}
   .cell.done svg.mk{opacity:.45}
-  /* Belegte/bewiesene Felder sind nicht mehr anklickbar … */
-  .cell.lockedcell{pointer-events:none}
-  /* … im Notizmodus aber schon, dort darf auf JEDES Feld geklickt werden. */
-  #board.notes .cell{pointer-events:auto;cursor:pointer}
+  /* Belegte/bewiesene Felder: rein visuell und per aria markiert. Die Sperre
+     selbst sitzt in der Logik (isBlocked / G.fixed), NICHT in pointer-events –
+     das wuerde Pointer-Capture beim Ziehen und elementFromPoint zerstoeren. */
+  .cell.lockedcell{cursor:default}
+  #board.notes .cell{cursor:pointer}
 
   /* ---- Notizmodus: hypothetische Katzen/Kreuze ---- */
   /* Liegen als Overlay ÜBER dem echten Feldinhalt und verändern ihn nie. */
@@ -90,9 +91,11 @@
   .cell .note.cat::before{content:"";position:absolute;inset:8%;border:2px dashed rgba(255,255,255,.85);
                           border-radius:7px;box-shadow:0 0 0 2px rgba(20,10,35,.35) inset}
   #board.notes{border-style:dashed;box-shadow:0 0 0 3px rgba(255,255,255,.18),0 14px 40px rgba(0,0,0,.45)}
-  .notesbar{display:flex;justify-content:center;padding:6px 0 0}
-  .notesbar .btn{min-width:200px}
-  .notesbar .btn.on{background:rgba(255,255,255,.16);border-style:dashed;font-weight:700}
+  .notesbar{display:flex;justify-content:center;gap:8px;padding:6px 0 0}
+  .notesbar .btn{min-width:0;flex:1 1 0;padding:11px 6px;font-size:14px}
+  .notesbar #btn-sound{flex:0 0 34%}
+  .notesbar .btn.on{background:rgba(255,255,255,.16);font-weight:700}
+  .notesbar #btn-notes.on{border-style:dashed}
   .hint.notes-on{display:none}
 
   /* ---- Siegesanimation ---- */
@@ -231,7 +234,10 @@
     <div class="pill"><div class="k">Leben</div><div class="v lives" id="hud-lives"></div></div>
   </div>
   <div class="boardwrap"><div id="board"></div></div>
-  <div class="notesbar"><button class="btn ghost" id="btn-notes" aria-pressed="false">📝 Notizmodus</button></div>
+  <div class="notesbar">
+    <button class="btn ghost" id="btn-notes" aria-pressed="false">📝 Notizmodus</button>
+    <button class="btn ghost" id="btn-sound" aria-pressed="true">🔊 Ton</button>
+  </div>
   <div class="msg" id="msg"></div>
   <div class="gamebar">
     <button class="btn ghost hint-btn big" id="btn-bighint">🐱 Tipp <small>1× pro Level · nur 10 % Punkte</small></button>
@@ -306,6 +312,7 @@ function buildPalette(K){
   return out;
 }
 const LS_KEY = 'meowdoku.highscores.v2';
+const LS_SOUND = 'meowdoku.sound';
 const LS_NAME = 'meowdoku.name';
 const LS_CUSTOM = 'meowdoku.custom';
 const LIVES = 7;  // sieben Leben – wie eine Katze
@@ -1119,8 +1126,10 @@ function paint(){
       el._note = undefined;   // innerHTML hat das Notiz-Overlay entfernt
     }
 
-    // Belegte/bewiesene Felder nehmen keine Klicks mehr an (kein Leben-Verlust).
-    const bl = st !== EMPTY || G.fixed.has(r * G.C + c);
+    // Gesperrt sind gesetzte Katzen und bewiesene Felder (G.fixed).
+    // Ein selbst gesetztes Kreuz bleibt bewusst klickbar – sonst koennte der
+    // zweite Tipp des Doppeltipps die Zelle nicht mehr erreichen.
+    const bl = st === CAT || G.fixed.has(r * G.C + c);
     if(el._bl !== bl){
       el._bl = bl;
       el.classList.toggle('lockedcell', bl);
@@ -1224,10 +1233,15 @@ function dragMove(ev){
   dragKey = key;
 
   // Sobald gezogen wird, ist klar: kein Doppeltipp. Das Startfeld darf
-  // deshalb sofort bewertet werden.
+  // deshalb sofort bewertet und versiegelt werden.
   if(pendingCheck){
     clearTimeout(pendingCheck); pendingCheck = null;
-    if(pendingCell >= 0) wrongCross((pendingCell / G.C) | 0, pendingCell % G.C);
+    if(pendingCell >= 0){
+      const pr = (pendingCell / G.C) | 0, pc = pendingCell % G.C;
+      pendingCell = -1;
+      if(G.sol[pr][pc]) wrongCross(pr, pc);   // wrongCross prueft das NICHT selbst
+      seal(pr, pc);
+    }
   }
   lastKey = -1;
 
@@ -1240,8 +1254,23 @@ function dragEnd(){ dragging = false; dragKey = -1; }
 function crossNow(r, c){
   if(G.locked || G.fixed.has(r * G.C + c) || G.board[r][c] !== EMPTY) return;
   G.board[r][c] = MARK;
-  paint(); vibrate(4);
+  paint(); vibrate(4); sfx('cross');
   if(G.sol[r][c]) wrongCross(r, c);
+  seal(r, c);                       // beim Ziehen gibt es keinen Doppeltipp
+}
+
+/**
+ * Ein gesetztes Kreuz endgültig machen: nach Ablauf des Doppeltipp-Fensters
+ * ist das Feld tot – es nimmt keine Eingaben mehr an und kann nicht mehr in
+ * eine Katze umgewandelt werden.
+ */
+function seal(r, c){
+  if(G.board[r][c] !== MARK) return;
+  // Zweite Sicherung: ein Katzenfeld darf NIE als Kreuz versiegelt werden –
+  // sonst ist das Level nicht mehr lösbar.
+  if(G.sol[r][c]) return;
+  G.fixed.add(r * G.C + c);
+  paint();
 }
 
 /** Einfacher Tipp: Kreuz sofort setzen; die Bewertung folgt nach dem Fenster. */
@@ -1249,26 +1278,31 @@ function singleTap(r, c){
   if(G.locked || G.fixed.has(r * G.C + c) || G.board[r][c] !== EMPTY) return;
 
   G.board[r][c] = MARK;
-  paint(); vibrate(6);
+  paint(); vibrate(6); sfx('cross');
 
-  if(G.sol[r][c]){
-    pendingCell = r * G.C + c;
-    pendingCheck = setTimeout(() => {
-      pendingCheck = null; pendingCell = -1; wrongCross(r, c);
-    }, DBL_MS);
-  }
+  // Ein Timer für beides: Bewertung (nur auf Katzenfeldern) und das
+  // Versiegeln. Ein Doppeltipp räumt ihn vorher ab, dann passiert nichts.
+  pendingCell = r * G.C + c;
+  pendingCheck = setTimeout(() => {
+    pendingCheck = null; pendingCell = -1;
+    if(G.sol[r][c]) wrongCross(r, c);
+    seal(r, c);
+  }, DBL_MS);
 }
 
 /** Kreuz auf einem Katzenfeld: kostet ein Leben und deckt die Katze auf. */
 function wrongCross(r, c){
   if(G.locked || G.board[r][c] !== MARK) return;
 
-  const before = G.lives;
   loseLife(r, c, [], 'Da sitzt eine Katze!');
-  if(G.lives === before){ return; }              // Treffer wurde abgefangen
 
-  revealCat(r, c, true);
+  // Aufgedeckt wird IMMER – auch wenn die 400 ms-Sperre in loseLife den
+  // Treffer geschluckt hat. Sonst bliebe ein Kreuz auf einem Katzenfeld
+  // stehen; zusammen mit seal() waere das Level dann unlösbar, weil eine
+  // Katze fehlt und checkSolved nie K erreicht.
+  if(G.lives > 0) revealCat(r, c, true);
 }
+
 
 /** Belegte oder bereits bewiesene Felder sind gesperrt – kein Klick, kein Leben. */
 function isBlocked(r, c){
@@ -1298,7 +1332,7 @@ function placeCat(r, c){
   G.fixed.add(r * G.C + c);
   autoCross(r, c);
   paint();
-  vibrate(14);
+  vibrate(14); sfx('cat');
   checkSolved();
 }
 
@@ -1335,6 +1369,7 @@ function autoCross(r, c){
       G.pending.delete(rr * G.C + cc);
       if(G.board[rr][cc] === EMPTY) G.board[rr][cc] = MARK;
       paint();
+      sfx('wave', i, todo.length);
     }, i * stepMs));
   });
 }
@@ -1386,7 +1421,7 @@ function toggleNoteCat(r, c){
   if(G.noteCats.has(k)) G.noteCats.delete(k);
   else G.noteCats.add(k);
   paintNotes();
-  vibrate(6);
+  vibrate(6); sfx('note');
 }
 
 /**
@@ -1514,7 +1549,7 @@ function hintCat(){
   const [r,c] = opts[rnd(opts.length)];
   G.hintUsed = true;
   updateHintBtn();
-  vibrate([15,40,15]);
+  vibrate([15,40,15]); sfx('hint');
   message('Katze aufgedeckt – dieses Level zählt nur 10 %', 'var(--accent2)');
   revealCat(r, c, true);
 }
@@ -1536,6 +1571,178 @@ function markGiven(){
 
 function vibrate(p){ try{ navigator.vibrate && navigator.vibrate(p); }catch(e){} }
 
+/* ====================== Sound ======================
+   Alle Klänge werden zur Laufzeit synthetisiert (Web Audio). Bewusst keine
+   eingebetteten Audiodateien: schon ein kurzer Klick wäre als Base64 mehrere
+   Kilobyte, sechs Sounds würden diese Datei spürbar aufblähen.
+
+   Browser erlauben Audio erst nach einer Nutzergeste – der AudioContext wird
+   deshalb faul beim ersten Ereignis erzeugt und zusätzlich bei der ersten
+   Interaktion aufgeweckt (siehe unten im Events-Abschnitt). */
+
+let actx = null, masterGain = null;
+let soundOn = (() => { try{ return localStorage.getItem(LS_SOUND) !== '0'; }catch(e){ return true; } })();
+
+/** AudioContext faul anlegen. Gibt null zurück, wenn Audio nicht verfügbar ist. */
+function audio(){
+  if(!soundOn) return null;
+  if(actx === null){
+    try{
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if(!AC){ actx = false; return null; }
+      actx = new AC();
+      masterGain = actx.createGain();
+      masterGain.gain.value = 0.9;
+      masterGain.connect(actx.destination);
+    }catch(e){ actx = false; return null; }
+  }
+  if(!actx) return null;
+  if(actx.state === 'suspended') actx.resume().catch(() => {});
+  return actx;
+}
+
+/** Nach einer Nutzergeste aufwecken – sonst bleibt alles stumm (iOS/Safari). */
+function wakeAudio(){ if(soundOn) audio(); }
+
+/**
+ * Ein Ton mit Hüllkurve.
+ * @param {{at?:number, freq:number, to?:number, dur?:number, type?:string,
+ *          gain?:number, filter?:number, q?:number}} o
+ */
+function tone(o){
+  const ac = audio(); if(!ac) return;
+  const t0  = ac.currentTime + (o.at || 0);
+  const dur = o.dur || 0.12;
+  const osc = ac.createOscillator();
+  const env = ac.createGain();
+  osc.type = o.type || 'sine';
+  osc.frequency.setValueAtTime(o.freq, t0);
+  if(o.to) osc.frequency.exponentialRampToValueAtTime(o.to, t0 + dur);
+
+  let node = osc;
+  if(o.filter){                                  // Bandpass für Vokalfarbe
+    const bp = ac.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = o.filter;
+    bp.Q.value = o.q || 6;
+    osc.connect(bp); node = bp;
+  }
+
+  const peak = o.gain === undefined ? 0.2 : o.gain;
+  const atk  = o.atk === undefined ? Math.min(0.02, dur * 0.25) : o.atk;
+  env.gain.setValueAtTime(0.0001, t0);
+  env.gain.exponentialRampToValueAtTime(peak, t0 + atk);
+  env.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+
+  node.connect(env); env.connect(masterGain);
+  osc.start(t0); osc.stop(t0 + dur + 0.02);
+}
+
+/**
+ * Ereignis-Klänge.
+ * @param {string} name cross|cat|error|win|gameover|note|hint
+ * @param {number} [i] laufender Index (nur für die Kreuz-Welle)
+ * @param {number} [n] Gesamtzahl (nur für die Kreuz-Welle)
+ */
+function sfx(name, i, n){
+  if(!soundOn) return;
+  switch(name){
+    case 'cross':                                  // trockener Klick
+      tone({freq: 900, to: 320, dur: 0.05, type: 'square', gain: 0.10});
+      break;
+
+    case 'wave': {                                 // Kreuz-Welle als Arpeggio
+      // Ohne Drosselung wären das bis zu ~100 Klicks in Folge – das knattert.
+      const total = Math.max(1, n || 1);
+      const steps = Math.min(total, 10);
+      if(total > steps && i % Math.ceil(total / steps) !== 0) return;
+      const SCALE = [523.25, 587.33, 659.25, 783.99, 880, 1046.5];
+      const f = SCALE[Math.min(SCALE.length - 1, Math.round((i / total) * SCALE.length))];
+      tone({freq: f, dur: 0.07, type: 'triangle', gain: 0.055});
+      break;
+    }
+
+    case 'cat':                                    // „Miau“: Tonhöhe hoch, dann runter
+      tone({freq: 480, to: 760, dur: 0.13, type: 'sawtooth', gain: 0.17, filter: 1100, q: 7});
+      tone({at: 0.12, freq: 780, to: 380, dur: 0.26, type: 'sawtooth', gain: 0.17, filter: 900, q: 7});
+      break;
+
+    case 'error':                                  // abfallender Doppelton
+      tone({freq: 330, to: 240, dur: 0.14, type: 'sawtooth', gain: 0.16});
+      tone({at: 0.13, freq: 240, to: 150, dur: 0.22, type: 'sawtooth', gain: 0.16});
+      break;
+
+    case 'win':                                    // Dur-Arpeggio + Schlussakkord
+      [523.25, 659.25, 783.99, 1046.5].forEach((f, k) =>
+        tone({at: k * 0.09, freq: f, dur: 0.22, type: 'triangle', gain: 0.17}));
+      [523.25, 659.25, 783.99, 1046.5].forEach(f =>
+        tone({at: 0.40, freq: f, dur: 0.75, type: 'triangle', gain: 0.10}));
+      break;
+
+    /* --- Siegesanimation: die Fanfare entsteht aus der Animation selbst --- */
+
+    case 'winstep': {                              // ein Ton je aufleuchtendem Feld
+      // Dur-Pentatonik über gut zwei Oktaven – steigt mit der Welle an.
+      const SC = [523.25, 587.33, 659.25, 783.99, 880,
+                  1046.5, 1174.7, 1318.5, 1568, 1760, 2093];
+      const total = Math.max(1, n || 1);
+      // Bei großen Brettern (bis 81 Felder, ~4 ms Takt) wäre ein Ton je Feld
+      // ein Maschinengewehr. Deshalb auf höchstens 24 Töne verteilt.
+      const steps = Math.min(total, 24);
+      if(total > steps && i % Math.ceil(total / steps) !== 0) return;
+      const f = SC[Math.min(SC.length - 1, Math.floor((i / total) * SC.length))];
+      tone({freq: f, dur: 0.16, type: 'triangle', gain: 0.085});
+      break;
+    }
+
+    case 'winpop':                                 // Brett ploppt: satter Dur-Akkord
+      [261.63, 329.63, 392, 523.25].forEach(f =>
+        tone({freq: f, dur: 0.38, type: 'triangle', gain: 0.15}));
+      break;
+
+    case 'winglow':                                // Leuchten: schwebender Akkord
+      [523.25, 659.25, 783.99, 1046.5, 1318.5].forEach((f, k) =>
+        tone({at: k * 0.05, freq: f, dur: 1.6, type: 'sine', gain: 0.075, atk: 0.35}));
+      // leichte Verstimmung darüber erzeugt das Schweben
+      [524.6, 785.9].forEach(f =>
+        tone({at: 0.1, freq: f, dur: 1.5, type: 'sine', gain: 0.045, atk: 0.4}));
+      break;
+
+    case 'btn':                                    // Button: weicher, kurzer Blip
+      tone({freq: 620, to: 780, dur: 0.055, type: 'sine', gain: 0.09});
+      break;
+
+    case 'gameover':                               // tief und absackend
+      tone({freq: 300, to: 90, dur: 0.75, type: 'sawtooth', gain: 0.18});
+      break;
+
+    case 'note':                                   // Notizmodus: leise und neutral
+      tone({freq: 660, dur: 0.06, type: 'sine', gain: 0.07});
+      break;
+
+    case 'hint':
+      tone({freq: 700, to: 950, dur: 0.16, type: 'triangle', gain: 0.14});
+      break;
+  }
+}
+
+/** Ton an/aus schalten und merken. */
+function toggleSound(){
+  soundOn = !soundOn;
+  try{ localStorage.setItem(LS_SOUND, soundOn ? '1' : '0'); }catch(e){}
+  syncSoundUi();
+  if(soundOn) sfx('note');                        // sofortige Rückmeldung
+}
+
+function syncSoundUi(){
+  const b = $('btn-sound');
+  if(!b) return;
+  b.textContent = soundOn ? '🔊 Ton' : '🔇 Ton';
+  b.classList.toggle('on', soundOn);
+  b.setAttribute('aria-pressed', soundOn ? 'true' : 'false');
+}
+
+
 function loseLife(r, c, bad, msg){
   // Schutz gegen doppelt zugestellte Events: pro Zeitfenster nur ein Leben.
   const now = Date.now();
@@ -1543,7 +1750,7 @@ function loseLife(r, c, bad, msg){
   G.lastHit = now;
 
   G.lives--;
-  vibrate([30,50,30]);
+  vibrate([30,50,30]); sfx('error');
   const flash = el => { el.classList.remove('bad'); void el.offsetWidth; el.classList.add('bad'); };
   flash(G.cells[r][c]);
   bad.slice(0,4).forEach(([br,bc]) => flash(G.cells[br][bc]));
@@ -1579,7 +1786,7 @@ function levelSolved(){
   if(G.hintUsed) pts = Math.max(1, Math.round(pts * 0.1));   // Tipp benutzt -> 10 %
   G.score += pts;
   updateHud();
-  vibrate([20,40,20,40,60]);
+  vibrate([20,40,20,40,60]);   // Klang kommt aus victory(), passend zur Animation
   const info = [`+${pts}`];
   if(bonus > 0) info.push(`Tempo +${bonus}`);
   if(G.hintUsed) info.push('Tipp: 10 %');
@@ -1624,6 +1831,7 @@ function victory(){
     const i = r * G.C + c, el = G.cells[r][c];
     G.anim.push(setTimeout(() => {
       el.classList.add('flash');
+      sfx('winstep', i, total);                  // steigender Ton mit der Welle
       G.anim.push(setTimeout(() => el.classList.remove('flash'), CELL_MS));
     }, 160 + i * step));
   }
@@ -1633,13 +1841,14 @@ function victory(){
   // 3) Brett ploppt als Ganzes
   G.anim.push(setTimeout(() => {
     board.classList.add('pop');
-    vibrate([25, 60, 25]);
+    vibrate([25, 60, 25]); sfx('winpop');
   }, waveEnd));
 
   // 4) Rahmen leuchtet, Hinweis erscheint
   G.anim.push(setTimeout(() => {
     board.classList.remove('pop');
     board.classList.add('glow');
+    sfx('winglow');
     awaitNextLevel();
   }, waveEnd + 460));
 }
@@ -1709,6 +1918,7 @@ function gameOver(){
   G.locked = true;
   stopAnim();
   stopTimer();
+  sfx('gameover');
   G.totalTime += elapsed();
   const entry = {
     name: localStorage.getItem(LS_NAME) || 'Katzenfreund',
@@ -1784,6 +1994,18 @@ $('btn-start').onclick = startGame;
 $('btn-hs').onclick = () => showHighscores(-1);
 $('btn-bighint').onclick = hintCat;
 $('btn-notes').onclick = toggleNotes;
+$('btn-sound').onclick = toggleSound;
+syncSoundUi();
+// Audio darf erst nach einer Nutzergeste starten – einmalig aufwecken.
+document.addEventListener('pointerdown', wakeAudio, { once: true });
+document.addEventListener('keydown',     wakeAudio, { once: true });
+// Klang für jeden Button – delegiert, damit auch Buttons in Overlays (die erst
+// zur Laufzeit entstehen) erfasst werden. Capture, damit stopPropagation in
+// einzelnen Handlern den Ton nicht verschluckt.
+document.addEventListener('pointerdown', ev => {
+  const t = ev.target;
+  if(t && t.closest && t.closest('.btn')) sfx('btn');
+}, true);
 // Kontextmenü fürs ganze Brett unterdrücken: Rechtsklick = Katze setzen.
 // Muss am Brett hängen, nicht an der Zelle – gesetzte Zellen sind
 // `pointer-events:none`, das Event landet dann direkt beim Brett.
