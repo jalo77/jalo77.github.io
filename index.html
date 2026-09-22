@@ -39,7 +39,14 @@
        background:linear-gradient(135deg,var(--accent),var(--accent2));color:#2b1230;box-shadow:0 6px 18px rgba(255,126,182,.25);transition:transform .08s}
   .btn:active{transform:scale(.97)}
   .btn.ghost{background:rgba(255,255,255,.08);color:var(--fg);box-shadow:none;border:1px solid rgba(255,255,255,.14)}
-  .diffs{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+  .diffs{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+  .custom{margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,.12)}
+  .custom label{display:flex;justify-content:space-between;align-items:baseline;
+    font-size:13px;color:var(--muted);margin:10px 0 4px}
+  .custom output{color:var(--accent);font-weight:700;font-size:14px}
+  .custom input[type=range]{width:100%;margin:0;accent-color:var(--accent);height:26px}
+  .warn{margin-top:10px;font-size:11.5px;line-height:1.5;color:var(--accent);
+    background:rgba(255,179,71,.12);border:1px solid rgba(255,179,71,.3);border-radius:10px;padding:8px 10px}
   .diff{padding:12px 8px;border-radius:13px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);text-align:center;transition:.15s}
   .diff .n{display:block;font-weight:700;font-size:15px}
   .diff .m{display:block;font-size:11px;color:var(--muted);margin-top:2px}
@@ -51,17 +58,61 @@
   .hud{display:flex;align-items:center;gap:7px;margin-bottom:10px}
   .pill{flex:1;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1);border-radius:13px;padding:7px 3px;text-align:center;min-width:0}
   .pill .k{font-size:10px;letter-spacing:1.1px;color:var(--muted);text-transform:uppercase}
-  .pill .v{font-size:16px;font-weight:700;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .pill .v{font-size:16px;font-variant-numeric:tabular-nums;font-weight:700;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .lives{letter-spacing:1px}
   .lives .lost{opacity:.22;filter:grayscale(1)}
-  .boardwrap{flex:1;display:flex;align-items:center;justify-content:center;min-height:0}
+  .boardwrap{flex:1;display:grid;place-content:safe center;min-height:0;min-width:0;
+    overflow:auto;-webkit-overflow-scrolling:touch}
   #board{display:grid;gap:1px;background:var(--line);border:3px solid var(--line);border-radius:14px;overflow:hidden;
          box-shadow:0 14px 40px rgba(0,0,0,.45);touch-action:manipulation}
   .cell{position:relative;display:flex;align-items:center;justify-content:center;border:0;
-        padding:0;transition:filter .12s}
+        padding:0;transition:filter .12s;touch-action:none}
   .cell svg{width:76%;height:76%;filter:drop-shadow(0 2px 2px rgba(0,0,0,.35));animation:pop .22s cubic-bezier(.34,1.56,.64,1)}
   .cell svg.mk{width:46%;height:46%;filter:none;animation:pop .16s ease-out}
-  .cell.marked{filter:saturate(.45) brightness(.82)}
+  /* Markiertes Feld und aufgedeckte Katze sehen identisch aus: gleich leicht abgedunkelt */
+  .cell.marked,
+  .cell.given{filter:saturate(.8) brightness(.94)}
+  /* Fertige Farbe: einheitlich abgedunkelt, innere Rasterlinien verschwinden */
+  .cell.done{filter:saturate(.62) brightness(.66)}
+  .cell.done svg.mk{opacity:.45}
+
+  /* ---- Siegesanimation ---- */
+  /* Einzelne Zelle: hellt in ihrer eigenen Farbe auf und ploppt nach oben */
+  @keyframes cellFlash{
+    0%  {transform:translateY(0)     scale(1);    filter:saturate(1)    brightness(1)}
+    45% {transform:translateY(-16%)  scale(1.16); filter:saturate(1.35) brightness(1.6)}
+    100%{transform:translateY(0)     scale(1);    filter:saturate(1)    brightness(1)}
+  }
+  .cell.victory{filter:none;transition:none}
+  .cell.flash{animation:cellFlash .42s cubic-bezier(.34,1.3,.5,1);z-index:3}
+  .cell.flash svg{filter:drop-shadow(0 0 9px var(--glow)) drop-shadow(0 0 3px rgba(255,255,255,.9)) brightness(1.25)}
+  /* Gelöstes Brett: keine Ränder mehr, dafür ein Gold-Pink-Leuchtrahmen.
+     Der Rahmen liegt als Pseudo-Element ÜBER den Zellen – eine box-shadow am
+     Brett selbst würde hinter den Kindelementen gezeichnet. */
+  #board{position:relative}
+  #board.won{overflow:visible;border-color:transparent;background:transparent;box-shadow:none}
+  #board.won::after{
+    content:"";position:absolute;inset:-5px;border-radius:19px;pointer-events:none;z-index:6;
+    box-shadow:inset 0 0 0 3px #ffb347, inset 0 0 0 6px #ff7eb6,
+               0 0 26px 6px rgba(255,150,120,.55), 0 0 60px 18px rgba(255,126,182,.3);
+    animation:frameIn .3s ease-out}
+  @keyframes frameIn{from{opacity:0;transform:scale(1.04)}to{opacity:1;transform:scale(1)}}
+  #board.won svg.mk{opacity:0;transition:opacity .3s ease-out}
+  /* Damit das Leuchten auch seitlich sichtbar ist, darf der Container nicht clippen */
+  .boardwrap.celebrate{overflow:visible}
+  @keyframes boardPop{
+    0%{transform:scale(1)} 35%{transform:scale(1.07)} 70%{transform:scale(.972)} 100%{transform:scale(1)}
+  }
+  #board.pop{animation:boardPop .44s ease-in-out}
+  @keyframes frameGlow{
+    0%,100%{box-shadow:inset 0 0 0 3px #ffb347, inset 0 0 0 6px #ff7eb6,
+                       0 0 26px 6px rgba(255,150,120,.5),  0 0 60px 18px rgba(255,126,182,.28)}
+    50%    {box-shadow:inset 0 0 0 4px #ffd08a, inset 0 0 0 8px #ff9ecb,
+                       0 0 44px 14px rgba(255,165,195,.8), 0 0 96px 34px rgba(255,126,182,.45)}
+  }
+  #board.glow::after{animation:frameGlow 1.5s ease-in-out infinite}
+  .msg.tap{color:var(--accent);animation:tapPulse 1.4s ease-in-out infinite}
+  @keyframes tapPulse{0%,100%{opacity:.6}50%{opacity:1}}
   .paw{filter:drop-shadow(0 0 4px rgba(255,179,71,.5))}
   @keyframes pop{0%{transform:scale(.3) rotate(-18deg);opacity:0}100%{transform:scale(1) rotate(0);opacity:1}}
   .cell.bad{animation:shake .4s}
@@ -91,12 +142,14 @@
   input[type=text]{width:100%;padding:13px;border-radius:12px;border:1px solid rgba(255,255,255,.2);
        background:rgba(0,0,0,.25);color:var(--fg);font:inherit;text-align:center;margin:10px 0}
   ol.hs{list-style:none;padding:0;margin:0;text-align:left}
-  ol.hs li{display:flex;gap:8px;align-items:center;padding:9px 11px;border-radius:11px;background:rgba(255,255,255,.05);margin-bottom:6px;font-size:14px}
+  ol.hs li{display:flex;gap:8px;align-items:flex-start;padding:9px 11px;border-radius:11px;background:rgba(255,255,255,.05);margin-bottom:6px;font-size:14px}
   ol.hs li.me{background:linear-gradient(90deg,rgba(255,179,71,.25),rgba(255,126,182,.18));border:1px solid rgba(255,179,71,.4)}
   ol.hs .rk{width:24px;font-weight:800;color:var(--accent)}
-  ol.hs .nm{flex:1;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  ol.hs .dt{font-size:11px;color:var(--muted);font-weight:400}
-  ol.hs .sc{font-weight:800}
+  ol.hs .nm{flex:1;font-weight:600;min-width:0}
+  ol.hs .dt{display:block;font-size:11px;color:var(--muted);font-weight:400;margin-top:2px}
+  ol.hs .dt b{color:var(--fg);font-weight:700}
+  ol.hs .dt.sub{opacity:.7;margin-top:1px}
+  ol.hs .sc{font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap}
   .empty{color:var(--muted);font-size:14px;text-align:center;padding:14px}
   .loader{display:flex;flex-direction:column;align-items:center;gap:12px;color:var(--muted);font-size:14px}
   .spin{width:38px;height:38px;border:4px solid rgba(255,255,255,.15);border-top-color:var(--accent);border-radius:50%;animation:sp .8s linear infinite}
@@ -114,6 +167,13 @@
   <div class="card">
     <h2>Schwierigkeit</h2>
     <div class="diffs" id="diffs"></div>
+    <div class="custom" id="custom-box" hidden>
+      <label for="sl-n">Kantenlänge <output id="o-n">7×7</output></label>
+      <input type="range" id="sl-n" min="4" max="10" step="1" value="7">
+      <label for="sl-t">Anspruch <output id="o-t">Standard</output></label>
+      <input type="range" id="sl-t" min="1" max="4" step="1" value="2">
+      <div class="warn" id="size-warn" hidden></div>
+    </div>
     <div class="foot" style="margin-top:8px;text-align:center">
       Die Feldgröße variiert pro Level – quadratisch <em>und</em> rechteckig.
     </div>
@@ -128,8 +188,10 @@
       <li>Weiter entfernte Diagonalen sind erlaubt.</li>
       <li>Jede <b>falsch gesetzte Katze</b> kostet <b>ein Leben</b>. Du hast <b>7</b> – wie eine Katze. 🐱</li>
       <li>Ein <b>Kreuz auf einem Katzenfeld</b> kostet ebenfalls ein Leben – die Katze wird dann aufgedeckt.</li>
-      <li>1× tippen = Feld als <b>leer</b> markieren · 2× tippen = <b>Katze</b> setzen.</li>
+      <li>1× tippen = Feld als <b>leer</b> markieren · <b>gedrückt halten und ziehen</b> setzt mehrere Kreuze.</li>
+      <li>2× tippen oder <b>Rechtsklick</b> = <b>Katze</b>.</li>
       <li>Gesetztes bleibt stehen – es ist immer korrekt.</li>
+      <li>Je <b>schneller</b> du löst, desto mehr Punkte – bis zu <b>doppelt</b> so viele.</li>
       <li>Jedes Level ist <b>eindeutig</b> und ohne Raten lösbar.</li>
       
     </ul>
@@ -145,17 +207,17 @@
 <section id="s-game" class="screen">
   <div class="hud">
     <div class="pill"><div class="k">Level</div><div class="v" id="hud-level">1</div></div>
-    <div class="pill"><div class="k">Feld</div><div class="v" id="hud-size">–</div></div>
+    <div class="pill"><div class="k">Zeit</div><div class="v" id="hud-time">0:00</div></div>
     <div class="pill"><div class="k">Punkte</div><div class="v" id="hud-score">0</div></div>
     <div class="pill"><div class="k">Leben</div><div class="v lives" id="hud-lives"></div></div>
   </div>
   <div class="boardwrap"><div id="board"></div></div>
   <div class="msg" id="msg"></div>
   <div class="gamebar">
-    <button class="btn ghost hint-btn big" id="btn-bighint">🐱 Katze aufdecken <small>kostet 1 Leben</small></button>
+    <button class="btn ghost hint-btn big" id="btn-bighint">🐱 Tipp <small>1× pro Level · nur 10 % Punkte</small></button>
     <button class="btn ghost" id="btn-quit">Beenden</button>
   </div>
-  <div class="hint">1× tippen = ✕ · 2× tippen = Katze</div>
+  <div class="hint"><span id="hud-size">–</span> · 1× tippen = ✕ (ziehen für mehrere) · 2× tippen / Rechtsklick = Katze</div>
 </section>
 
 <!-- ============ OVERLAY ============ -->
@@ -179,12 +241,15 @@
 -------------------------------------------------------------------*/
 
 /* ====================== Konstanten ====================== */
-// minDim/maxDim = Spannweite der Seitenlängen; skew = max. Seitenunterschied
+// Spielfelder sind immer quadratisch: lo/hi = Spannweite der Kantenlänge.
 const DIFFS = [
-  {id:'leicht', name:'Leicht', lo:4, hi:6,  skew:2, mult:1.0},
-  {id:'mittel', name:'Mittel', lo:6, hi:8,  skew:3, mult:2.0},
-  {id:'schwer', name:'Schwer', lo:7, hi:9,  skew:3, mult:3.5}
+  {id:'leicht', name:'Leicht', lo:4, hi:6, mult:1.0},
+  {id:'mittel', name:'Mittel', lo:6, hi:8, mult:2.0},
+  {id:'schwer', name:'Schwer', lo:7, hi:9, mult:3.5},
+  {id:'custom', name:'Eigen',  lo:4, hi:10, mult:2.0, custom:true, size:7, tier:2}
 ];
+/** Bezeichnungen der Anspruchsstufen (= benötigte Solver-Technik). */
+const TIERS = ['', 'Einsteiger', 'Standard', 'Fortgeschritten', 'Knifflig'];
 // Klar unterscheidbare Farben: weit gestreute Farbtöne, zusätzlich in Helligkeit
 // und Sättigung abgestuft, damit auch benachbarte Töne nie verwechselbar sind.
 // [hex, Farbton in Grad]
@@ -195,8 +260,27 @@ const PALETTE_DEF = [
 ];
 const PALETTE = PALETTE_DEF.map(x => x[0]);
 const HUES    = PALETTE_DEF.map(x => x[1]);
+
+/**
+ * Farbvorrat für K Regionen. Bis 12 Farben die handverlesene Palette,
+ * darüber hinaus per Goldenem Winkel gestreute Farbtöne mit wechselnder
+ * Helligkeit/Sättigung – so bleiben auch 100 Farben unterscheidbar.
+ * @returns {{hex:string, hue:number}[]}
+ */
+function buildPalette(K){
+  if(K <= PALETTE_DEF.length) return PALETTE_DEF.map(x => ({hex:x[0], hue:x[1]}));
+  const out = [];
+  for(let i=0;i<K;i++){
+    const hue = (i * 137.508) % 360;              // Goldener Winkel -> maximale Streuung
+    const sat = [72, 55, 84][i % 3];
+    const lig = [62, 74, 50][(i >> 1) % 3];
+    out.push({hex:`hsl(${hue.toFixed(1)} ${sat}% ${lig}%)`, hue});
+  }
+  return out;
+}
 const LS_KEY = 'meowdoku.highscores.v2';
 const LS_NAME = 'meowdoku.name';
+const LS_CUSTOM = 'meowdoku.custom';
 const LIVES = 7;  // sieben Leben – wie eine Katze
 
 /* ====================== Hilfen ====================== */
@@ -311,6 +395,8 @@ function buildUnits(R, C, reg, K){
  */
 function logicSolve(R, C, reg, K, opt){
   opt = opt || {};
+  const stats = opt.stats;                       // optional: höchste benötigte Technikstufe
+  const tier = t => { if(stats && t > stats.tier) stats.tier = t; };
   const deep = !!opt.deep;                       // Widerspruchsbeweis erlauben?
   const U = opt.U || buildUnits(R, C, reg, K);
   const cand = opt.cand || mk2d(R, C, true);
@@ -344,7 +430,7 @@ function logicSolve(R, C, reg, K, opt){
       if(!u.exact || hasCat(u.cells)) continue;
       const cs = candsOf(u.cells);
       if(cs.length === 0){ dead = true; break; }
-      if(cs.length === 1){ place(cs[0][0], cs[0][1]); progress = true; }
+      if(cs.length === 1){ place(cs[0][0], cs[0][1]); progress = true; tier(1); }
     }
     if(dead) break;
 
@@ -355,11 +441,11 @@ function logicSolve(R, C, reg, K, opt){
       if(!cs.length){ dead = true; break; }
       if(new Set(cs.map(x=>x[0])).size === 1){
         const r = cs[0][0];
-        for(let c=0;c<C;c++) if(reg[r][c]!==g && kill(r,c)) progress = true;
+        for(let c=0;c<C;c++) if(reg[r][c]!==g && kill(r,c)){ progress = true; tier(2); }
       }
       if(new Set(cs.map(x=>x[1])).size === 1){
         const c = cs[0][1];
-        for(let r=0;r<R;r++) if(reg[r][c]!==g && kill(r,c)) progress = true;
+        for(let r=0;r<R;r++) if(reg[r][c]!==g && kill(r,c)){ progress = true; tier(2); }
       }
     }
     if(dead) break;
@@ -373,12 +459,14 @@ function logicSolve(R, C, reg, K, opt){
       if(gs.size === 1){
         const g = gs.values().next().value;
         const inUnit = new Set(cs.map(([r,c]) => r*C + c));
-        for(const [r,c] of U.regs[g]) if(!inUnit.has(r*C + c) && kill(r,c)) progress = true;
+        for(const [r,c] of U.regs[g]) if(!inUnit.has(r*C + c) && kill(r,c)){ progress = true; tier(2); }
       }
     }
     if(dead) break;
 
-    // 5) Blockade-Ausschluss
+    // 5) Blockade-Ausschluss – quadratisch in der Fläche, daher nur bis 900 Zellen
+    //    (alle regulären Schwierigkeiten liegen darunter, bleiben also unverändert)
+    if(R*C <= 900)
     for(let r=0;r<R;r++) for(let c=0;c<C;c++){
       if(!cand[r][c] || sol[r][c]) continue;
       const blocked = new Set();
@@ -397,7 +485,7 @@ function logicSolve(R, C, reg, K, opt){
         if(cs.some(([a,b]) => a===r && b===c)) continue;   // wird von (r,c) selbst bedient
         if(cs.length && cs.every(([a,b]) => blocked.has(a*C + b))){ contradiction = true; break; }
       }
-      if(contradiction && kill(r,c)) progress = true;
+      if(contradiction && kill(r,c)){ progress = true; tier(3); }
     }
 
     if(progress) continue;
@@ -417,13 +505,14 @@ function logicSolve(R, C, reg, K, opt){
       const res = logicSolve(R, C, reg, K,
         {U, cand:tc, sol:ts, placed, deep:false, seed:[r,c]});
       if(res === null && tc.__dead){            // Widerspruch bewiesen
-        kill(r, c); proved = true; break;
+        kill(r, c); proved = true; tier(4); break;
       }
     }
     if(!proved) break;
   }
 
   if(dead) cand.__dead = true;
+  if(opt.out){ opt.out.cand = cand; opt.out.sol = sol; opt.out.placed = placed; opt.out.dead = dead; }
   if(dead || placed !== K) return null;
   return validate(R, C, reg, K, sol) ? sol : null;
 }
@@ -530,21 +619,13 @@ function cutSolution(R, C, reg, target, other, K){
   return true;
 }
 
-/** Maße für das nächste Level würfeln. Nach vielen Fehlversuchen wird's kleiner. */
-function rollDims(diff, attempt){
+/** Kantenlänge für das nächste Level. Nach vielen Fehlversuchen wird's kleiner. */
+function rollSize(diff, attempt){
+  if(diff.size) return diff.size;                 // Custom: exakt gewählte Kantenlänge
   const relief = Math.min(2, Math.floor((attempt||0) / 400));
   const lo = Math.max(4, diff.lo - relief);
   const hi = Math.max(lo, diff.hi - relief);
-  for(let i=0;i<60;i++){
-    const a = rndRange(lo, hi);
-    const b = rndRange(lo, hi);
-    if(Math.abs(a-b) > diff.skew) continue;
-    const R = Math.min(a,b), C = Math.max(a,b);
-    if(R < 4) continue;
-    if(C > PALETTE.length + 2) continue;
-    return [R, C];
-  }
-  return [lo, lo];
+  return rndRange(lo, hi);
 }
 
 /**
@@ -553,6 +634,7 @@ function rollDims(diff, attempt){
  * @returns {number[]} Palettenindex je Region
  */
 function assignColors(R, C, reg, K){
+  const pal = buildPalette(K);
   const adj = Array.from({length:K}, () => new Set());
   for(let r=0;r<R;r++) for(let c=0;c<C;c++){
     const g = reg[r][c];
@@ -564,21 +646,22 @@ function assignColors(R, C, reg, K){
   const order = [...Array(K).keys()].sort((a,b) => adj[b].size - adj[a].size);
   const colorOf = new Array(K).fill(-1);
   const used = new Set();
-  const offset = rnd(PALETTE.length);   // Levels sehen nicht alle gleich aus
+  const offset = rnd(pal.length);       // Levels sehen nicht alle gleich aus
 
   for(const g of order){
     let best = -1, bestScore = -1;
-    for(let i=0;i<PALETTE.length;i++){
-      const idx = (i + offset) % PALETTE.length;
+    for(let i=0;i<pal.length;i++){
+      const idx = (i + offset) % pal.length;
       if(used.has(idx)) continue;
       let score = 360;
       for(const nb of adj[g]) if(colorOf[nb] >= 0)
-        score = Math.min(score, hueGap(HUES[idx], HUES[colorOf[nb]]));
+        score = Math.min(score, hueGap(pal[idx].hue, pal[colorOf[nb]].hue));
       if(score > bestScore){ bestScore = score; best = idx; }
+      if(bestScore >= 120) break;       // gut genug – spart Zeit bei vielen Farben
     }
     colorOf[g] = best; used.add(best);
   }
-  return colorOf;
+  return colorOf.map(i => pal[i].hex);  // fertige Farbwerte je Region
 }
 
 /**
@@ -591,12 +674,8 @@ function assignColors(R, C, reg, K){
  */
 function verifyLevel(lvl){
   const {K} = lvl;
-  let R = lvl.R, C = lvl.C, reg = lvl.reg, sol = lvl.sol;
-  if(R > C){                                   // in Solver-Orientierung bringen
-    const t = (m) => Array.from({length:C},(_,a)=>Array.from({length:R},(_,b)=>m[b][a]));
-    [reg, sol] = [t(reg), t(sol)];
-    [R, C] = [C, R];
-  }
+  const R = lvl.R, C = lvl.C, reg = lvl.reg, sol = lvl.sol;
+  if(R !== C || K !== R) return false;          // Spielfelder sind immer quadratisch
 
   // Farben: vorhanden, gültige IDs, genau eine Katze pro Farbe
   const cells = new Array(K).fill(0), cats = new Array(K).fill(0);
@@ -612,36 +691,28 @@ function verifyLevel(lvl){
   // Regeln insgesamt
   if(!validate(R, C, reg, K, sol)) return false;
 
-  // Eindeutigkeit
   const cols = new Array(R).fill(-1);
   for(let r=0;r<R;r++) for(let c=0;c<C;c++) if(sol[r][c]) cols[r] = c;
   if(cols.some(x => x < 0)) return false;
-  if(findSolution(R, C, reg, K, cols)) return false;
 
-  // Ohne Raten lösbar: erst reine Deduktion, sonst per Widerspruchsbeweis
-  return !!(logicSolve(R, C, reg, K) || logicSolve(R, C, reg, K, {deep:true}));
+  // Ohne Raten lösbar: erst reine Deduktion, sonst per Widerspruchsbeweis.
+  // Gelingt das, ist das Level automatisch eindeutig – jede Setzung des Solvers
+  // ist erzwungen, also muss jede Lösung mit ihr übereinstimmen.
+  const deduced = logicSolve(R, C, reg, K) || logicSolve(R, C, reg, K, {deep:true});
+  if(deduced){
+    for(let r=0;r<R;r++) for(let c=0;c<C;c++)
+      if(!!deduced[r][c] !== !!sol[r][c]) return false;   // muss dieselbe Lösung sein
+    return true;
+  }
+
+  // Nicht deduktiv lösbar -> nur zulässig, wenn wenigstens eindeutig (kleine Felder)
+  return R*C <= 144 && !findSolution(R, C, reg, K, cols);
 }
 
-/** Transponiert ein Level (für hochkant-rechteckige Felder). */
-function transpose(lvl){
-  const {R, C, reg, sol} = lvl;
-  const nreg = mk2d(C, R, -1), nsol = mk2d(C, R, false);
-  for(let r=0;r<R;r++) for(let c=0;c<C;c++){ nreg[c][r] = reg[r][c]; nsol[c][r] = sol[r][c]; }
-  return {R:C, C:R, K:lvl.K, reg:nreg, sol:nsol, colors:lvl.colors};
-}
-
-/**
- * Erzeugt ein Level, das garantiert eindeutig UND rein deduktiv lösbar ist.
- *
- * Ablauf: Startplatzierung → Regionen wachsen lassen → solange eine zweite
- * Lösung existiert, wird sie gezielt weggeschnitten (cutSolution) → danach
- * muss der deduktive Solver (kein Raten!) das Level knacken, sonst neuer Versuch.
- * Es wird NIEMALS ein mehrdeutiges Level ausgeliefert.
- */
 /**
  * Nachbesserung: Level ist eindeutig, aber der deduktive Solver kommt nicht durch.
- * Wir färben einzelne Nicht-Katzen-Zellen probeweise um; jede Änderung, die die
- * Eindeutigkeit erhält, wird behalten, sobald sie das Level deduktiv knackbar macht.
+ * Einzelne Nicht-Katzen-Zellen werden probeweise in eine Nachbarregion umgefärbt;
+ * jede Änderung, die Eindeutigkeit und Kompaktheit erhält, wird behalten.
  * @returns {boolean[][]|null} Lösung, wenn die Nachbesserung erfolgreich war.
  */
 function refine(R, C, reg, K, cols, budgetMs){
@@ -652,7 +723,6 @@ function refine(R, C, reg, K, cols, budgetMs){
     if(catCell.has(r*C + c)) continue;
     const old = reg[r][c];
 
-    // nur in eine angrenzende Region umfärben -> Zielregion bleibt kompakt
     const neigh = [];
     for(const [dr,dc] of [[-1,0],[1,0],[0,-1],[0,1]]){
       const nr=r+dr, nc=c+dc;
@@ -666,21 +736,29 @@ function refine(R, C, reg, K, cols, budgetMs){
     }
     const sol = logicSolve(R, C, reg, K);
     if(sol) return sol;
-    // eindeutig & kompakt geblieben -> Änderung behalten, weiter probieren
   }
   return null;
 }
 
+/**
+ * Erzeugt ein quadratisches Level, das garantiert eindeutig UND ohne Raten
+ * lösbar ist. Es wird niemals ein mehrdeutiges Level ausgeliefert.
+ */
 function generateLevel(diff, depth){
   depth = depth || 0;
   const start = Date.now();
-  const BUDGET = 4000;
-  let unique = null;           // eindeutig, aber (noch) nicht rein deduktiv
+  const area = diff.size ? diff.size * diff.size : 0;
+  // Der Aufwand vervielfacht sich je Kantenlänge (gemessen: 10 ≈ 2s, 11 ≈ 21s, 12 ≈ 70s).
+  const BUDGET = diff.custom
+    ? Math.round(3000 * Math.pow(4, Math.max(0, diff.size - 9)))
+    : 4000;
+  const wantTier = diff.custom ? (diff.tier || 1) : 0;
+  let best = null;                 // lösbar, aber nicht in der Wunsch-Anspruchsstufe
 
   for(let attempt=0; attempt<4000; attempt++){
     if(Date.now() - start > BUDGET) break;
-    const [R, C] = rollDims(diff, attempt);
-    const K = R;
+    const n = rollSize(diff, attempt);
+    const R = n, C = n, K = n;
     const cols = randomPlacement(R, C);
     if(!cols) continue;
     const reg = growRegions(R, C, cols);
@@ -698,45 +776,64 @@ function generateLevel(diff, depth){
     if(findSolution(R, C, reg, K, cols)) continue;       // Sicherheitsnetz
     if(countDisconnected(R, C, reg, K) > 1) continue;    // höchstens eine zerrissene Farbe
 
+    // --- Custom: gewünschte Anspruchsstufe treffen ---
+    if(wantTier){
+      const stats = {tier:0};
+      let sol = logicSolve(R, C, reg, K, {stats});
+      if(!sol && wantTier >= 4) sol = logicSolve(R, C, reg, K, {deep:true, stats});
+      if(sol){
+        if(stats.tier >= wantTier) return finish({R, C, K, reg, sol});
+        if(!best || stats.tier > best.tier) best = {R, C, K, reg, sol, tier: stats.tier};
+      }
+      continue;
+    }
+
     let sol = logicSolve(R, C, reg, K);
     if(sol) return finish({R, C, K, reg, sol});          // perfekt: ohne Raten lösbar
 
-    // Nachbessern statt wegwerfen
     sol = refine(R, C, reg, K, cols, Math.max(150, BUDGET - (Date.now()-start)));
     if(sol) return finish({R, C, K, reg, sol});
 
     // Letzte Instanz: auch per Widerspruchsbeweis lösbare Level sind zulässig.
-    // Bewusst erst hier, damit die bisherige Levelcharakteristik erhalten bleibt.
     sol = logicSolve(R, C, reg, K, {deep:true});
     if(sol) return finish({R, C, K, reg, sol});
-
-    if(!unique) unique = {R, C, K, reg, sol: solutionFromCols(R, C, cols)};
   }
 
+  if(best) return finish(best);
+
   // Kein raten-freies Level gefunden? Dann lieber ein kleineres Feld als Raten.
-  if(depth < 2){
+  if(!wantTier && depth < 2){
     return generateLevel({...diff, lo: Math.max(4, diff.lo-2), hi: Math.max(5, diff.hi-2)}, depth+1);
   }
 
-  // Eindeutigkeit ist in jedem Fall garantiert.
-  if(unique) return finish(unique);
-
-  // Absoluter Notnagel: kleines quadratisches Feld
-  const R = Math.max(4, diff.lo), C = R;
-  const cols = randomPlacement(R, C);
-  const reg = growRegions(R, C, cols);
-  for(let cut=0; cut<R*C*8; cut++){
-    const other = findSolution(R, C, reg, R, cols);
-    if(!other) break;
-    if(!cutSolution(R, C, reg, cols, other, R)) break;
+  // Absoluter Notnagel – liefert nur nachweislich raten-frei lösbare Level.
+  const n = diff.size || Math.max(4, diff.lo);
+  const R = n, C = n, K = n;
+  for(let attempt=0; attempt<4000; attempt++){
+    const cols = randomPlacement(R, C);
+    if(!cols) continue;
+    const reg = growRegions(R, C, cols);
+    if(!reg) continue;
+    let ok = true;
+    for(let cut=0; cut<R*C*8; cut++){
+      const other = findSolution(R, C, reg, K, cols);
+      if(!other) break;
+      if(!cutSolution(R, C, reg, cols, other, K)){ ok = false; break; }
+    }
+    if(!ok || findSolution(R, C, reg, K, cols)) continue;
+    // Zusammenhangs-Regel auch hier einhalten; erst spät gelockert, damit
+    // der Notnagel nicht endlos läuft.
+    if(countDisconnected(R, C, reg, K) > (attempt < 2000 ? 1 : 2)) continue;
+    const sol = logicSolve(R, C, reg, K) || logicSolve(R, C, reg, K, {deep:true});
+    if(sol) return finish({R, C, K, reg, sol});
   }
-  return finish({R, C, K:R, reg, sol: solutionFromCols(R, C, cols)});
+  const cols = randomPlacement(4, 4);
+  return finish({R:4, C:4, K:4, reg: growRegions(4, 4, cols), sol: solutionFromCols(4, 4, cols)});
 }
 
 function finish(lvl){
   lvl.colors = assignColors(lvl.R, lvl.C, lvl.reg, lvl.K);
-  // 50 % hochkant, außer das Feld ist ohnehin quadratisch
-  return (lvl.R !== lvl.C && Math.random() < 0.5) ? transpose(lvl) : lvl;
+  return lvl;
 }
 
 function solutionFromCols(R, C, cols){
@@ -792,7 +889,9 @@ const G = {
   level: 1, score: 0, lives: LIVES,
   R: 0, C: 0, K: 0, reg: null, sol: null, colors: null,
   board: null, cells: [], locked: false,
-  fixed: new Set(), lastHit: 0
+  fixed: new Set(), hinted: new Set(), pending: new Set(), anim: [], continueFn: null,
+  lastHit: 0, hintUsed: false,
+  levelStart: 0, timerId: null, totalTime: 0
 };
 
 /* ====================== UI ====================== */
@@ -802,10 +901,50 @@ function renderDiffs(){
   DIFFS.forEach(d => {
     const b = document.createElement('button');
     b.className = 'diff' + (d.id === G.diff.id ? ' sel' : '');
-    b.innerHTML = `<span class="n">${d.name}</span><span class="m">${d.lo}–${d.hi}<br>×${d.mult}</span>`;
+    const info = d.custom
+      ? `${d.size}×${d.size}<br>${TIERS[d.tier]}`
+      : `${d.lo}–${d.hi}<br>×${d.mult}`;
+    b.innerHTML = `<span class="n">${d.name}</span><span class="m">${info}</span>`;
     b.onclick = () => { G.diff = d; renderDiffs(); };
     wrap.appendChild(b);
   });
+  $('custom-box').hidden = !G.diff.custom;
+}
+
+/** Punktefaktor für ein selbst zusammengestelltes Level. */
+function customMult(d){
+  return Math.max(0.5, Math.round((0.4 + d.size*d.size/28 + d.tier*0.45) * 10) / 10);
+}
+
+function readSliders(){
+  const d = DIFFS.find(x => x.custom);
+  d.size = +$('sl-n').value;
+  d.tier = +$('sl-t').value;
+  d.mult = customMult(d);
+  $('o-n').textContent = `${d.size}×${d.size}`;
+  $('o-t').textContent = TIERS[d.tier];
+
+  const warn = $('size-warn');
+  const HINTS = {
+    9:  'Die Erzeugung dauert etwa eine Sekunde.',
+    10: 'Die Erzeugung dauert einige Sekunden.'
+  };
+  warn.hidden = !HINTS[d.size];
+  if(HINTS[d.size]) warn.textContent = HINTS[d.size];
+  try{ localStorage.setItem(LS_CUSTOM, JSON.stringify({n:d.size, t:d.tier})); }catch(e){}
+  renderDiffs();
+}
+
+function initCustom(){
+  const d = DIFFS.find(x => x.custom);
+  try{
+    const saved = JSON.parse(localStorage.getItem(LS_CUSTOM));
+    if(saved && saved.n){ d.size = Math.min(10, Math.max(4, saved.n)); d.tier = saved.t || 2; }
+  }catch(e){}
+  $('sl-n').value = d.size;
+  $('sl-t').value = d.tier;
+  ['sl-n','sl-t'].forEach(id => $(id).addEventListener('input', readSliders));
+  readSliders();
 }
 function show(id){ document.querySelectorAll('.screen').forEach(s => s.classList.toggle('active', s.id === id)); }
 function overlay(html){ $('ovbox').innerHTML = html; $('ov').classList.add('active'); }
@@ -813,34 +952,43 @@ function closeOverlay(){ $('ov').classList.remove('active'); }
 
 function updateHud(){
   $('hud-level').textContent = G.level;
-  $('hud-size').textContent = G.R ? `${G.R}×${G.C}` : '–';
+  $('hud-size').textContent = G.R ? `${G.C}×${G.R}` : '–';
   $('hud-score').textContent = G.score;
   $('hud-lives').innerHTML = `<span class="paw">🐾</span> ${G.lives}`;
 }
 
-function message(txt, color){
+function message(txt, color, persist){
   const m = $('msg');
   m.textContent = txt;
   m.style.color = color || 'var(--accent)';
   m.style.opacity = 1;
+  m.classList.toggle('tap', !!persist);
   clearTimeout(message._t);
-  message._t = setTimeout(() => { m.style.opacity = 0; }, 1800);
+  if(!persist) message._t = setTimeout(() => { m.style.opacity = 0; }, 1800);
 }
 
 function buildBoard(){
   const {R, C, reg} = G;
   const board = $('board');
   board.innerHTML = '';
+  board.classList.remove('won', 'pop', 'glow');
+  if(board.parentElement) board.parentElement.classList.remove('celebrate');
 
-  const availW = Math.min(window.innerWidth - 32, 540);
-  const availH = Math.max(180, window.innerHeight - 300);
-  const size = Math.max(26, Math.floor(Math.min((availW - C) / C, (availH - R) / R)));
+  // Echten Platz des Containers messen statt zu schätzen – sonst ragt das
+  // Brett bei großen Feldern über den Rand hinaus und wird abgeschnitten.
+  const wrap = board.parentElement;
+  const availW = Math.min((wrap.clientWidth  || window.innerWidth - 32) - 8, 540);
+  const availH = (wrap.clientHeight || Math.max(180, window.innerHeight - 300)) - 8;
+  const frame = 2 * 3;                       // Außenrahmen des Bretts
+  const size = Math.max(18, Math.floor(Math.min(
+    (availW - frame - (C-1)) / C,
+    (availH - frame - (R-1)) / R)));
   board.style.gridTemplateColumns = `repeat(${C}, ${size}px)`;
   board.style.gridTemplateRows    = `repeat(${R}, ${size}px)`;
   board.style.width = board.style.height = 'auto';
 
   // Grenzstärke an Zellgröße koppeln
-  const bw = size >= 46 ? 4 : size >= 34 ? 3 : 2;
+  const bw = size >= 46 ? 4 : size >= 34 ? 3 : size >= 20 ? 2 : 1;
 
   G.cells = [];
   for(let r=0;r<R;r++){
@@ -848,7 +996,7 @@ function buildBoard(){
     for(let c=0;c<C;c++){
       const b = document.createElement('button');
       b.className = 'cell';
-      b.style.background = PALETTE[G.colors[reg[r][c]]];
+      b.style.background = G.colors[reg[r][c]];
 
       // Farbgrenzen als inset-Schatten: liegen exakt innerhalb der Zelle,
       // überlappen nie und verrutschen auch bei ungeraden Größen nicht.
@@ -857,10 +1005,17 @@ function buildBoard(){
       if(r === R-1 || reg[r+1][c] !== g) sh.push(`inset 0 -${bw}px 0 0 var(--line)`);
       if(c === 0   || reg[r][c-1] !== g) sh.push(`inset ${bw}px 0 0 0 var(--line)`);
       if(c === C-1 || reg[r][c+1] !== g) sh.push(`inset -${bw}px 0 0 0 var(--line)`);
-      b.style.boxShadow = sh.join(',');
+      b._sh = sh.join(',');
+      b.style.boxShadow = b._sh;
+      b.style.setProperty('--glow', G.colors[reg[r][c]]);
+      b._r = r; b._c = c;
 
       b.setAttribute('aria-label', `Reihe ${r+1}, Spalte ${c+1}`);
-      b.addEventListener('pointerdown', ev => { ev.preventDefault(); onTap(r, c); });
+      b.addEventListener('pointerdown', ev => {
+        ev.preventDefault();
+        if(ev.button === 2){ resetInput(); placeCat(r, c); }   // Rechtsklick = Katze
+        else { dragStart(r, c); onTap(r, c); }
+      });
       b.addEventListener('contextmenu', ev => ev.preventDefault());
       board.appendChild(b);
       row.push(b);
@@ -871,21 +1026,43 @@ function buildBoard(){
 }
 
 function paint(){
+  // Eine Farbe gilt als abgeschlossen, sobald ihre Katze steht.
+  const done = new Array(G.K).fill(false);
+  for(let r=0;r<G.R;r++) for(let c=0;c<G.C;c++)
+    if(G.board[r][c] === CAT) done[G.reg[r][c]] = true;
+
   for(let r=0;r<G.R;r++) for(let c=0;c<G.C;c++){
-    const el = G.cells[r][c], st = G.board[r][c];
-    if(el._st === st) continue;
-    el._st = st;
-    el.innerHTML = st === CAT ? CAT_SVG(catColor(G.reg[r][c]))
-                 : st === MARK ? MARK_SVG
-                 : '';
-    el.classList.toggle('marked', st === MARK);
+    const el = G.cells[r][c], st = G.board[r][c], d = done[G.reg[r][c]];
+
+    if(el._st !== st){
+      el._st = st;
+      el.innerHTML = st === CAT ? CAT_SVG(catColor(G.reg[r][c]))
+                   : st === MARK ? MARK_SVG
+                   : '';
+      el.classList.toggle('marked', st === MARK);
+    }
+
+    if(el._done !== d){
+      el._done = d;
+      el.classList.toggle('done', d);
+      // Der 1px-Spalt zum Nachbarn wird mit der Feldfarbe überdeckt, damit eine
+      // fertige Farbe als EINE Fläche erscheint statt als Raster aus Zellen.
+      el.style.boxShadow = d
+        ? (el._sh ? el._sh + ', ' : '') + `0 0 0 1px ${G.colors[G.reg[r][c]]}`
+        : el._sh;
+    }
   }
 }
+/** Dunklere Variante der Regionsfarbe – für Kontrast auf dem Feld. */
 function catColor(g){
-  const hex = PALETTE[G.colors[g]];
-  const [r,gr,b] = [1,3,5].map(i => parseInt(hex.substr(i,2),16));
-  const f = 0.42;
-  return `rgb(${Math.round(r*f)},${Math.round(gr*f)},${Math.round(b*f)})`;
+  const col = G.colors[g];
+  if(col[0] === '#'){
+    const [r,gr,b] = [1,3,5].map(i => parseInt(col.substr(i,2),16));
+    const f = 0.42;
+    return `rgb(${Math.round(r*f)},${Math.round(gr*f)},${Math.round(b*f)})`;
+  }
+  // hsl(...) -> Helligkeit kräftig absenken
+  return col.replace(/(\d+(?:\.\d+)?)%\s*\)$/, (m, l) => `${Math.round(l * 0.34)}%)`);
 }
 
 /** Konfliktzellen für eine geplante Setzung (leer = erlaubt). */
@@ -903,120 +1080,277 @@ function conflicts(r, c){
   return out;
 }
 
-/* --- Eingabe: 1× tippen = Kreuz/leeren, 2× tippen = Katze ---
-   Das Kreuz wird erst gesetzt, wenn feststeht, dass kein zweiter Tipp folgt –
-   sonst bliebe bei jedem Katzen-Doppeltipp kurz ein Kreuz stehen. Das Fenster
-   ist bewusst kurz (180 ms), damit die Verzögerung nicht spürbar ist. */
-let tapTimer = null, tapKey = -1;
-const DBL_MS = 180;
+/* --- Eingabe: 1× tippen = Kreuz, 2× tippen = Katze ---
+   Das Kreuz erscheint SOFORT (kein gefühlter Delay). Folgt innerhalb des
+   Doppeltipp-Fensters ein zweiter Tipp, wird es wieder entfernt und stattdessen
+   eine Katze gesetzt. Nur die Bewertung des Kreuzes wartet das Fenster ab –
+   sonst würde jeder Katzen-Doppeltipp zuerst als falsches Kreuz gelten. */
+let lastKey = -1, lastTime = 0, lastPrev = EMPTY, pendingCheck = null, pendingCell = -1;
+const DBL_MS = 200;
 
-/** Tipp-Erkennung zurücksetzen (Levelwechsel, Undo). */
+/** Tipp-Erkennung zurücksetzen (Levelwechsel). */
 function resetInput(){
-  if(tapTimer !== null){ clearTimeout(tapTimer); tapTimer = null; }
-  tapKey = -1;
+  lastKey = -1; lastTime = 0;
+  dragging = false; dragKey = -1;
+  if(pendingCheck){ clearTimeout(pendingCheck); pendingCheck = null; pendingCell = -1; }
 }
 
 function onTap(r, c){
   if(G.locked) return;
   const key = r * G.C + c;
   if(G.fixed.has(key)) return;                  // aufgedeckte Felder sind gesperrt
-  if(G.board[r][c] !== EMPTY) return;           // Gesetztes ist immer richtig -> bleibt
+  const now = Date.now();
 
-  if(tapTimer !== null && tapKey === key){      // zweiter Tipp: Katze
-    clearTimeout(tapTimer); tapTimer = null; tapKey = -1;
+  if(key === lastKey && now - lastTime < DBL_MS){          // zweiter Tipp: Katze
+    lastKey = -1;
+    if(pendingCheck){ clearTimeout(pendingCheck); pendingCheck = null; }
+    G.board[r][c] = lastPrev;                              // Kreuz zurücknehmen
+    paint();
     placeCat(r, c);
     return;
   }
-  if(tapTimer !== null){                        // anderes Feld: ersten Tipp jetzt ausführen
-    clearTimeout(tapTimer);
-    const pk = tapKey;
-    tapTimer = null; tapKey = -1;
-    singleTap((pk / G.C) | 0, pk % G.C);
-  }
-  tapKey = key;
-  tapTimer = setTimeout(() => { tapTimer = null; tapKey = -1; singleTap(r, c); }, DBL_MS);
+
+  lastKey = key; lastTime = now; lastPrev = G.board[r][c];
+  singleTap(r, c);
 }
 
-/**
- * Einfacher Tipp: Kreuz setzen. Ein stehengebliebenes Kreuz ist immer korrekt
- * (ein falsches deckt sofort die Katze auf), deshalb bleibt es dauerhaft.
- */
+/* --- Gedrückt halten und ziehen: mehrere Kreuze am Stück --- */
+let dragging = false, dragKey = -1;
+
+function dragStart(r, c){
+  dragging = true;
+  dragKey = r * G.C + c;
+}
+
+/** Zelle unter dem Finger/Zeiger finden (funktioniert auch bei Touch). */
+function cellFromPoint(x, y){
+  let el = document.elementFromPoint(x, y);
+  while(el && el._r === undefined) el = el.parentElement;
+  return el;
+}
+
+function dragMove(ev){
+  if(!dragging || G.locked) return;
+  const el = cellFromPoint(ev.clientX, ev.clientY);
+  if(!el) return;
+  const key = el._r * G.C + el._c;
+  if(key === dragKey) return;
+  dragKey = key;
+
+  // Sobald gezogen wird, ist klar: kein Doppeltipp. Das Startfeld darf
+  // deshalb sofort bewertet werden.
+  if(pendingCheck){
+    clearTimeout(pendingCheck); pendingCheck = null;
+    if(pendingCell >= 0) wrongCross((pendingCell / G.C) | 0, pendingCell % G.C);
+  }
+  lastKey = -1;
+
+  crossNow(el._r, el._c);
+}
+
+function dragEnd(){ dragging = false; dragKey = -1; }
+
+/** Kreuz beim Ziehen: sofort setzen UND sofort bewerten. */
+function crossNow(r, c){
+  if(G.locked || G.fixed.has(r * G.C + c) || G.board[r][c] !== EMPTY) return;
+  G.board[r][c] = MARK;
+  paint(); vibrate(4);
+  if(G.sol[r][c]) wrongCross(r, c);
+}
+
+/** Einfacher Tipp: Kreuz sofort setzen; die Bewertung folgt nach dem Fenster. */
 function singleTap(r, c){
   if(G.locked || G.fixed.has(r * G.C + c) || G.board[r][c] !== EMPTY) return;
 
-  if(G.sol[r][c]){ wrongCross(r, c); return; }  // dort sitzt in Wahrheit eine Katze
-
   G.board[r][c] = MARK;
   paint(); vibrate(6);
+
+  if(G.sol[r][c]){
+    pendingCell = r * G.C + c;
+    pendingCheck = setTimeout(() => {
+      pendingCheck = null; pendingCell = -1; wrongCross(r, c);
+    }, DBL_MS);
+  }
 }
 
 /** Kreuz auf einem Katzenfeld: kostet ein Leben und deckt die Katze auf. */
 function wrongCross(r, c){
-  if(G.locked) return;
+  if(G.locked || G.board[r][c] !== MARK) return;
 
   const before = G.lives;
   loseLife(r, c, [], 'Da sitzt eine Katze!');
-  if(G.lives === before) return;                // Treffer wurde abgefangen
+  if(G.lives === before){ return; }              // Treffer wurde abgefangen
 
-  G.board[r][c] = CAT;
-  G.fixed.add(r * G.C + c);
-  paint(); markGiven();
-
-  if(G.lives > 0){
-    let count = 0;
-    for(let i=0;i<G.R;i++) for(let j=0;j<G.C;j++) if(G.board[i][j] === CAT) count++;
-    if(count === G.K) levelSolved();
-  }
+  revealCat(r, c, true);
 }
 
-/** Doppeltipp: Katze setzen. Jede falsche Platzierung kostet ein Leben. */
+/** Doppeltipp/Rechtsklick: Katze setzen. Jede falsche Platzierung kostet ein Leben. */
 function placeCat(r, c){
   if(G.locked || G.board[r][c] === CAT) return;
 
   // Eine Katze darf nur dort stehen, wo sie laut Lösung hingehört.
   // Da jedes Level eindeutig ist, ist jede andere Stelle beweisbar falsch.
-  if(!G.sol[r][c]){ loseLife(r, c, conflicts(r, c)); return; }
+  if(!G.sol[r][c]){
+    const before = G.lives;
+    loseLife(r, c, conflicts(r, c));
+    if(G.lives < before){
+      // Bewiesen leer -> dauerhaftes Kreuz setzen
+      G.board[r][c] = MARK;
+      G.fixed.add(r * G.C + c);
+      paint();
+    }
+    return;
+  }
 
   G.board[r][c] = CAT;
+  G.fixed.add(r * G.C + c);
+  autoCross(r, c);
   paint();
   vibrate(14);
+  checkSolved();
+}
 
+/**
+ * Setzt alle Kreuze, die aus einer gesetzten Katze zwingend folgen:
+ * ganze Reihe, ganze Spalte, ganze Farbe und alle acht Nachbarfelder.
+ * Die Felder erscheinen als schnelle Welle von oben nach unten,
+ * von links nach rechts.
+ */
+function autoCross(r, c){
+  const g = G.reg[r][c];
+  const todo = [];
+  const touch = (rr, cc) => {
+    if(G.board[rr][cc] === CAT) return;
+    const k = rr * G.C + cc;
+    const fresh = G.board[rr][cc] === EMPTY && !G.pending.has(k);
+    G.fixed.add(k);                       // bewiesen leer -> gesperrt
+    if(fresh){ G.pending.add(k); todo.push([rr, cc]); }
+  };
+
+  for(let i=0;i<G.C;i++) if(i !== c) touch(r, i);                 // Reihe
+  for(let i=0;i<G.R;i++) if(i !== r) touch(i, c);                 // Spalte
+  for(let rr=0;rr<G.R;rr++) for(let cc=0;cc<G.C;cc++)             // Farbe
+    if((rr!==r || cc!==c) && G.reg[rr][cc] === g) touch(rr, cc);
+  for(let dr=-1;dr<=1;dr++) for(let dc=-1;dc<=1;dc++){            // Nachbarn
+    const nr=r+dr, nc=c+dc;
+    if((dr||dc) && nr>=0&&nr<G.R&&nc>=0&&nc<G.C) touch(nr, nc);
+  }
+
+  todo.sort((a,b) => a[0] - b[0] || a[1] - b[1]);                 // oben->unten, links->rechts
+  const stepMs = Math.max(8, Math.min(22, Math.round(260 / Math.max(1, todo.length))));
+  todo.forEach(([rr,cc], i) => {
+    G.anim.push(setTimeout(() => {
+      G.pending.delete(rr * G.C + cc);
+      if(G.board[rr][cc] === EMPTY) G.board[rr][cc] = MARK;
+      paint();
+    }, i * stepMs));
+  });
+}
+
+/** Laufende Kreuz-Animation abbrechen (Levelwechsel, Spielende). */
+function stopAnim(){
+  G.anim.forEach(clearTimeout);
+  G.anim = [];
+  G.pending.clear();
+  if(G.continueFn){ document.removeEventListener('pointerdown', G.continueFn); G.continueFn = null; }
+}
+
+/**
+ * Deckt eine Katze auf (Tipp oder falsches Kreuz) – inklusive Folgekreuzen.
+ * @param {boolean} hinted true = wird als aufgedeckt markiert
+ */
+function revealCat(r, c, hinted){
+  G.board[r][c] = CAT;
+  G.fixed.add(r * G.C + c);
+  if(hinted) G.hinted.add(r * G.C + c);
+  autoCross(r, c);
+  paint(); markGiven();
+  if(G.lives > 0) checkSolved();
+}
+
+/** Alle Katzen gesetzt? Dann ist das Level gelöst. */
+function checkSolved(){
   let count = 0;
   for(let i=0;i<G.R;i++) for(let j=0;j<G.C;j++) if(G.board[i][j] === CAT) count++;
   if(count === G.K) levelSolved();
 }
 
+/* --- Zeitnahme --- */
+
+/** Sekunden als m:ss. */
+function fmtTime(sec){
+  const m = Math.floor(sec / 60), r = sec % 60;
+  return `${m}:${String(r).padStart(2,'0')}`;
+}
+
+/** Bisher verstrichene Sekunden im laufenden Level. */
+function elapsed(){
+  return G.levelStart ? Math.floor((Date.now() - G.levelStart) / 1000) : 0;
+}
+
+/**
+ * Zielzeit eines Levels in Sekunden. Wächst mit Katzenzahl und Fläche –
+ * darunter gibt es Bonus, darüber nicht mehr.
+ */
+function targetTime(){
+  return Math.round(G.K * 7 + G.R * G.C * 0.25);
+}
+
+function startTimer(){
+  stopTimer();
+  G.levelStart = Date.now();
+  updateTimer();
+  G.timerId = setInterval(updateTimer, 500);
+}
+function stopTimer(){
+  if(G.timerId){ clearInterval(G.timerId); G.timerId = null; }
+}
+function updateTimer(){
+  const t = elapsed(), target = targetTime();
+  const el = $('hud-time');
+  el.textContent = fmtTime(t);
+  // Farbe zeigt, ob noch Zeitbonus drin ist
+  el.style.color = t <= target * 0.5 ? 'var(--ok)'
+                 : t <= target       ? 'var(--fg)'
+                 : 'var(--muted)';
+}
+
 /* --- Hinweise --- */
 
-/** Großer Hinweis: deckt eine echte Katze auf – kostet ein Leben, aber keine Punkte. */
+/**
+ * Tipp: deckt eine echte Katze auf. Pro Level genau einmal möglich; danach
+ * gibt es für das Level nur noch 10 % der Punkte.
+ */
 function hintCat(){
   if(G.locked) return;
+  if(G.hintUsed){ message('Pro Level gibt es nur einen Tipp'); return; }
+
   const opts = [];
   for(let r=0;r<G.R;r++) for(let c=0;c<G.C;c++)
     if(G.sol[r][c] && G.board[r][c] !== CAT) opts.push([r,c]);
   if(!opts.length){ message('Alle Katzen sind schon da'); return; }
-  if(G.lives <= 1){ message('Zu wenig Leben für einen Hinweis!', 'var(--danger)'); return; }
 
   const [r,c] = opts[rnd(opts.length)];
-  // Platz schaffen: falsch gesetzte Katzen im Weg entfernen
-  for(const [br,bc] of conflicts(r,c)) if(!G.fixed.has(br*G.C + bc)) G.board[br][bc] = EMPTY;
-  G.board[r][c] = CAT;
-  G.fixed.add(r*G.C + c);
-  G.lives--;
-  updateHud();
-  paint(); markGiven();
+  G.hintUsed = true;
+  updateHintBtn();
   vibrate([15,40,15]);
-  message('Katze aufgedeckt  (−1 Leben)', 'var(--accent2)');
+  message('Katze aufgedeckt – dieses Level zählt nur 10 %', 'var(--accent2)');
+  revealCat(r, c, true);
+}
 
-  let count = 0;
-  for(let i=0;i<G.R;i++) for(let j=0;j<G.C;j++) if(G.board[i][j] === CAT) count++;
-  if(count === G.K) levelSolved();
+/** Tipp-Button sperren, sobald er verbraucht ist. */
+function updateHintBtn(){
+  const b = $('btn-bighint');
+  b.disabled = G.hintUsed;
+  b.innerHTML = G.hintUsed
+    ? '🐱 Tipp <small>verbraucht · 10 % Punkte</small>'
+    : '🐱 Tipp <small>1× pro Level · nur 10 % Punkte</small>';
 }
 
 /** Aufgedeckte Felder optisch als vorgegeben kennzeichnen. */
 function markGiven(){
   for(let r=0;r<G.R;r++) for(let c=0;c<G.C;c++)
-    G.cells[r][c].classList.toggle('given', G.fixed.has(r*G.C + c));
+    G.cells[r][c].classList.toggle('given', G.hinted.has(r*G.C + c));
 }
 
 function vibrate(p){ try{ navigator.vibrate && navigator.vibrate(p); }catch(e){} }
@@ -1051,18 +1385,102 @@ function reasonFor(r, c, bad){
 
 function levelSolved(){
   G.locked = true;
-  const pts = Math.round((G.K * 10 + G.R * G.C) * G.diff.mult) + G.level * 5;
+  stopAnim();            // laufende Kreuz-Welle beenden
+  stopTimer();
+  const secs = elapsed();
+  G.totalTime += secs;
+
+  const base = Math.round((G.K * 10 + G.R * G.C) * G.diff.mult) + G.level * 5;
+  // Zeitbonus: bis zu +100 % der Grundpunkte, linear fallend bis zur Zielzeit.
+  const speed = Math.max(0, 1 - secs / targetTime());
+  const bonus = Math.round(base * speed);
+  let pts = base + bonus;
+  if(G.hintUsed) pts = Math.max(1, Math.round(pts * 0.1));   // Tipp benutzt -> 10 %
   G.score += pts;
   updateHud();
   vibrate([20,40,20,40,60]);
-  message(`Gelöst! +${pts} Punkte`, 'var(--ok)');
-  setTimeout(() => { G.level++; nextLevel(); }, 1100);
+  const info = [`+${pts}`];
+  if(bonus > 0) info.push(`Tempo +${bonus}`);
+  if(G.hintUsed) info.push('Tipp: 10 %');
+  message(`Gelöst in ${fmtTime(secs)}  ·  ${info.join(' · ')}`, 'var(--ok)');
+  victory();
+}
+
+/**
+ * Siegesanimation:
+ *   1. alle Ränder weg, ✕ ausblenden, Gold-Pink-Leuchtrahmen ums Brett
+ *   2. Welle: jedes Feld hellt in seiner Farbe auf, ploppt nach oben und zurück
+ *      (von oben nach unten, von links nach rechts)
+ *   3. das ganze Brett ploppt einmal
+ *   4. der Rahmen pulsiert – weiter geht es erst auf Antippen
+ */
+function victory(){
+  const board = $('board');
+
+  // 1) Ränder entfernen. Der Schatten deckt den 1px-Spalt zum Nachbarn UND den
+  //    Rest bis zum Brettrand ab, damit keine dunklen Lücken stehen bleiben.
+  const R = G.R, C = G.C;
+  for(let r=0;r<R;r++) for(let c=0;c<C;c++){
+    const el = G.cells[r][c], col = G.colors[G.reg[r][c]];
+    el.classList.add('victory');
+    el.classList.remove('done', 'marked', 'given');
+    el.style.boxShadow = `0 0 0 2px ${col}`;
+    // Randzellen runden die Außenkontur, damit sie nicht eckig über dem Rahmen sitzt
+    const tl = r===0     && c===0     ? '11px' : '0';
+    const tr = r===0     && c===C-1   ? '11px' : '0';
+    const br = r===R-1   && c===C-1   ? '11px' : '0';
+    const bl = r===R-1   && c===0     ? '11px' : '0';
+    el.style.borderRadius = `${tl} ${tr} ${br} ${bl}`;
+  }
+  board.classList.add('won');
+  if(board.parentElement) board.parentElement.classList.add('celebrate');
+
+  // 2) Welle über alle Felder – Takt so, dass sie immer ~650 ms dauert
+  const total = G.R * G.C;
+  const step  = Math.max(4, Math.min(30, Math.round(650 / total)));
+  const CELL_MS = 420;
+  for(let r=0;r<G.R;r++) for(let c=0;c<G.C;c++){
+    const i = r * G.C + c, el = G.cells[r][c];
+    G.anim.push(setTimeout(() => {
+      el.classList.add('flash');
+      G.anim.push(setTimeout(() => el.classList.remove('flash'), CELL_MS));
+    }, 160 + i * step));
+  }
+
+  const waveEnd = 160 + (total - 1) * step + CELL_MS;
+
+  // 3) Brett ploppt als Ganzes
+  G.anim.push(setTimeout(() => {
+    board.classList.add('pop');
+    vibrate([25, 60, 25]);
+  }, waveEnd));
+
+  // 4) Rahmen leuchtet, Hinweis erscheint
+  G.anim.push(setTimeout(() => {
+    board.classList.remove('pop');
+    board.classList.add('glow');
+    awaitNextLevel();
+  }, waveEnd + 460));
+}
+
+/** Nach der Siegesanimation: auf einen Tipp warten, dann nächstes Level. */
+function awaitNextLevel(){
+  message('Tippe für das nächste Level', 'var(--accent)', true);
+  const go = ev => {
+    if(ev) ev.preventDefault();
+    document.removeEventListener('pointerdown', go);
+    G.level++;
+    nextLevel();
+  };
+  G.continueFn = go;
+  document.addEventListener('pointerdown', go);
 }
 
 function nextLevel(){
   G.locked = true;
   overlay(`<div class="loader"><div class="spin"></div><div>Level ${G.level} wird erzeugt…</div>
-           <div style="font-size:12px">Prüfe Eindeutigkeit &amp; Lösbarkeit ohne Raten</div></div>`);
+           <div style="font-size:12px">Prüfe Eindeutigkeit &amp; Lösbarkeit ohne Raten</div>
+           <div style="font-size:11px;opacity:.7">Große Felder können dauern…</div></div>`);
   setTimeout(() => {
     let lvl = null;
     for(let tries=0; tries<6; tries++){
@@ -1071,39 +1489,51 @@ function nextLevel(){
     }
     if(!lvl){                                   // Notfall: garantiert lösbares Mini-Level
       for(let tries=0; tries<40 && !lvl; tries++){
-        const cand = generateLevel({...G.diff, lo:4, hi:5, skew:1});
+        const cand = generateLevel({...G.diff, lo:4, hi:5, size:0});
         if(verifyLevel(cand)) lvl = cand;
       }
     }
     Object.assign(G, {R:lvl.R, C:lvl.C, K:lvl.K, reg:lvl.reg, sol:lvl.sol, colors:lvl.colors});
     G.board = mk2d(G.R, G.C, EMPTY);
     G.fixed = new Set();
+    G.hinted = new Set();
+    stopAnim();
+    G.hintUsed = false;
     closeOverlay();
     updateHud();
     buildBoard();
     markGiven();
+    updateHintBtn();
     G.locked = false;
+    startTimer();
   }, 40);
 }
 
 function startGame(){
-  G.level = 1; G.score = 0; G.lives = LIVES;
+  G.level = 1; G.score = 0; G.lives = LIVES; G.totalTime = 0;
   show('s-game');
   nextLevel();
 }
 
 function gameOver(){
   G.locked = true;
+  stopAnim();
+  stopTimer();
+  G.totalTime += elapsed();
   const entry = {
     name: localStorage.getItem(LS_NAME) || 'Katzenfreund',
-    score: G.score, level: G.level - 1, diff: G.diff.name,
+    score: G.score, level: G.level - 1,
+    diff: G.diff.custom ? `Eigen ${G.diff.size}×${G.diff.size} · ${TIERS[G.diff.tier]}` : G.diff.name,
+    time: G.totalTime,
     date: new Date().toLocaleDateString('de-DE')
   };
   overlay(`
     <h2>😿 Vorbei</h2>
     <div class="big">${G.score}</div>
     <div style="color:var(--muted);font-size:14px;margin-bottom:6px">
-      ${entry.level} Level gelöst · ${G.diff.name}
+      <b style="color:var(--fg)">${entry.level}</b> Level gelöst · ${G.diff.name}<br>
+      Gesamtzeit <b style="color:var(--fg)">${fmtTime(entry.time)}</b>${
+        entry.level > 0 ? ` · ø <b style="color:var(--fg)">${fmtTime(Math.round(entry.time / entry.level))}</b> pro Level` : ''}
     </div>
     <input type="text" id="nm" maxlength="14" placeholder="Dein Name" value="${escapeHtml(entry.name)}">
     <button class="btn" id="ok">In Bestenliste eintragen</button>
@@ -1121,12 +1551,25 @@ function gameOver(){
 
 function showHighscores(highlight){
   const list = loadHS();
-  const rows = list.length ? list.map((e,i) => `
+  const rows = list.length ? list.map((e,i) => {
+    const lv  = e.level || 0;
+    const tot = e.time || 0;
+    const avg = lv > 0 && tot > 0 ? Math.round(tot / lv) : 0;
+    const stats = [
+      `<b>${lv}</b> Level`,
+      tot ? `gesamt <b>${fmtTime(tot)}</b>` : null,
+      avg ? `ø <b>${fmtTime(avg)}</b>` : null
+    ].filter(Boolean).join(' · ');
+    return `
     <li class="${i===highlight?'me':''}">
       <span class="rk">${i+1}.</span>
-      <span class="nm">${escapeHtml(e.name)}<br><span class="dt">${e.diff} · ${e.level} Level · ${e.date}</span></span>
+      <span class="nm">${escapeHtml(e.name)}
+        <span class="dt">${stats}</span>
+        <span class="dt sub">${e.diff} · ${e.date}</span>
+      </span>
       <span class="sc">${e.score}</span>
-    </li>`).join('') : '<div class="empty">Noch keine Einträge – auf geht\'s! 🐾</div>';
+    </li>`;
+  }).join('') : '<div class="empty">Noch keine Einträge – auf geht\'s! 🐾</div>';
   overlay(`
     <h2>🏆 Bestenliste</h2>
     <ol class="hs" style="margin-top:12px">${rows}</ol>
@@ -1142,9 +1585,13 @@ function escapeHtml(s){ return String(s).replace(/[&<>"']/g, m => ({'&':'&amp;',
 /* ====================== Events ====================== */
 $('btn-start').onclick = startGame;
 $('btn-hs').onclick = () => showHighscores(-1);
+$('btn-bighint').onclick = hintCat;
 $('btn-quit').onclick = () => {
   if(confirm('Spiel beenden? Dein Punktestand kann eingetragen werden.')){ G.lives = 0; gameOver(); }
 };
+document.addEventListener('pointermove', dragMove);
+document.addEventListener('pointerup', dragEnd);
+document.addEventListener('pointercancel', dragEnd);
 window.addEventListener('resize', () => { if(G.R && $('s-game').classList.contains('active')) buildBoard(); });
 document.addEventListener('gesturestart', e => e.preventDefault());
 
@@ -1175,6 +1622,7 @@ document.addEventListener('gesturestart', e => e.preventDefault());
 })();
 
 /* ====================== Start ====================== */
+initCustom();
 renderDiffs();
 </script>
 </body>
