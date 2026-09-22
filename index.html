@@ -96,7 +96,6 @@
   .notesbar #btn-sound{flex:0 0 34%}
   .notesbar .btn.on{background:rgba(255,255,255,.16);font-weight:700}
   .notesbar #btn-notes.on{border-style:dashed}
-  .hint.notes-on{display:none}
 
   /* ---- Siegesanimation ---- */
   /* Einzelne Zelle: hellt in ihrer eigenen Farbe auf und ploppt nach oben */
@@ -243,8 +242,7 @@
     <button class="btn ghost hint-btn big" id="btn-bighint">🐱 Tipp <small>1× pro Level · nur 10 % Punkte</small></button>
     <button class="btn ghost" id="btn-quit">Beenden</button>
   </div>
-  <div class="hint" id="hud-hint"><span id="hud-size">–</span> · 1× tippen = ✕ (ziehen für mehrere) · 2× tippen / Rechtsklick = Katze</div>
-  <div class="hint" id="notes-help" hidden>Notizmodus · Klick = hypothetische Katze setzen / entfernen · nichts wird gewertet</div>
+  <div class="hint" id="hud-hint"><span id="hud-size">–</span> · 1× tippen = ✕ (ziehen für mehrere) · 2× tippen / halten / Rechtsklick = Katze</div>
 </section>
 
 <!-- ============ OVERLAY ============ -->
@@ -722,6 +720,7 @@ function assignColors(R, C, reg, K){
  * @returns {boolean}
  */
 function verifyLevel(lvl, maxHypo){
+  if(!lvl) return false;
   maxHypo = maxHypo === undefined ? MAX_HYPO : maxHypo;
   const {K} = lvl;
   const R = lvl.R, C = lvl.C, reg = lvl.reg, sol = lvl.sol;
@@ -1098,7 +1097,7 @@ function buildBoard(){
         // Notizmodus fängt die Eingabe ab, bevor irgendeine Spiellogik greift.
         if(G.notes){ toggleNoteCat(r, c); return; }
         if(ev.button === 2){ resetInput(); placeCat(r, c); }   // Rechtsklick = Katze
-        else { dragStart(r, c); onTap(r, c); }
+        else { dragStart(r, c); onTap(r, c); startHold(r, c); }
       });
       board.appendChild(b);
       row.push(b);
@@ -1126,10 +1125,7 @@ function paint(){
       el._note = undefined;   // innerHTML hat das Notiz-Overlay entfernt
     }
 
-    // Gesperrt sind gesetzte Katzen und bewiesene Felder (G.fixed).
-    // Ein selbst gesetztes Kreuz bleibt bewusst klickbar – sonst koennte der
-    // zweite Tipp des Doppeltipps die Zelle nicht mehr erreichen.
-    const bl = st === CAT || G.fixed.has(r * G.C + c);
+    const bl = isSealed(r, c);
     if(el._bl !== bl){
       el._bl = bl;
       el.classList.toggle('lockedcell', bl);
@@ -1160,34 +1156,108 @@ function catColor(g){
   return col.replace(/(\d+(?:\.\d+)?)%\s*\)$/, (m, l) => `${Math.round(l * 0.34)}%)`);
 }
 
+/**
+ * Alle Felder, die von einer Katze auf (r,c) "gesehen" werden: die ganze Reihe,
+ * die ganze Spalte, die ganze Farbregion und die acht Nachbarn. Das Feld selbst
+ * ist nicht dabei, jedes andere höchstens einmal.
+ *
+ * Einzige Stelle, an der diese Geometrie ausgeschrieben steht – sie ist die
+ * Spielregel. Vorher stand sie dreifach da (Konflikte, Kreuzwelle, Notizmodus)
+ * und hätte auseinanderlaufen können.
+ *
+ * @param {(r:number, c:number) => void} fn
+ */
+function forEachSeen(r, c, fn){
+  const seen = new Set([r * G.C + c]);
+  const hit = (rr, cc) => {
+    const k = rr * G.C + cc;
+    if(seen.has(k)) return;
+    seen.add(k);
+    fn(rr, cc);
+  };
+  for(let i=0;i<G.C;i++) hit(r, i);                              // Reihe
+  for(let i=0;i<G.R;i++) hit(i, c);                              // Spalte
+  const g = G.reg[r][c];
+  for(let rr=0;rr<G.R;rr++) for(let cc=0;cc<G.C;cc++)            // Farbregion
+    if(G.reg[rr][cc] === g) hit(rr, cc);
+  for(let dr=-1;dr<=1;dr++) for(let dc=-1;dc<=1;dc++){           // 8 Nachbarn
+    const nr=r+dr, nc=c+dc;
+    if(nr>=0 && nr<G.R && nc>=0 && nc<G.C) hit(nr, nc);
+  }
+}
+
 /** Konfliktzellen für eine geplante Setzung (leer = erlaubt). */
 function conflicts(r, c){
   const out = [];
-  for(let i=0;i<G.C;i++) if(i!==c && G.board[r][i] === CAT) out.push([r,i]);
-  for(let i=0;i<G.R;i++) if(i!==r && G.board[i][c] === CAT) out.push([i,c]);
-  const g = G.reg[r][c];
-  for(let rr=0;rr<G.R;rr++) for(let cc=0;cc<G.C;cc++)
-    if((rr!==r || cc!==c) && G.board[rr][cc] === CAT && G.reg[rr][cc]===g) out.push([rr,cc]);
-  for(let dr=-1;dr<=1;dr++) for(let dc=-1;dc<=1;dc++){
-    const nr=r+dr, nc=c+dc;
-    if((dr||dc) && nr>=0&&nr<G.R&&nc>=0&&nc<G.C && G.board[nr][nc] === CAT) out.push([nr,nc]);
-  }
+  forEachSeen(r, c, (rr, cc) => { if(G.board[rr][cc] === CAT) out.push([rr, cc]); });
   return out;
 }
 
-/* --- Eingabe: 1× tippen = Kreuz, 2× tippen = Katze ---
+
+/* --- Eingabe: 1× tippen = Kreuz, 2× tippen ODER gedrückt halten = Katze ---
    Das Kreuz erscheint SOFORT (kein gefühlter Delay). Folgt innerhalb des
-   Doppeltipp-Fensters ein zweiter Tipp, wird es wieder entfernt und stattdessen
-   eine Katze gesetzt. Nur die Bewertung des Kreuzes wartet das Fenster ab –
-   sonst würde jeder Katzen-Doppeltipp zuerst als falsches Kreuz gelten. */
+   Doppeltipp-Fensters ein zweiter Tipp – oder bleibt der Finger HOLD_MS lang
+   liegen –, wird es zurückgenommen und stattdessen eine Katze gesetzt.
+
+   Deshalb darf das Kreuz erst NACH dem Haltefenster bewertet und versiegelt
+   werden (EVAL_MS): sonst wäre es beim Halten längst als falsches Kreuz
+   gewertet, bevor die Katze überhaupt entsteht. */
 let lastKey = -1, lastTime = 0, lastPrev = EMPTY, pendingCheck = null, pendingCell = -1;
-const DBL_MS = 200;
+const DBL_MS  = 200;                 // Doppeltipp-Fenster
+const HOLD_MS = 200;                 // so lange halten = Katze
+const EVAL_MS = HOLD_MS + 60;        // erst danach Kreuz bewerten/versiegeln
+let holdTimer = null;
+
+/* Der Kreuz-Klang wird NICHT beim Drücken gespielt, sondern erst wenn das Kreuz
+   sicher stehenbleibt: beim Loslassen oder wenn der Zeiger das Feld verlässt.
+   Sonst würde auch ein Kreuz klingen, das gleich darauf wieder zur Katze wird
+   (Halten oder Doppeltipp). Hier gemerkt wird das noch stumme Feld. */
+let pendingSound = -1;
+
+/** Gemerkten Kreuz-Klang abspielen – das Feld gilt jetzt als gesetzt. */
+function flushCrossSound(){
+  if(pendingSound < 0) return;
+  const r = (pendingSound / G.C) | 0, c = pendingSound % G.C;
+  pendingSound = -1;
+  if(G.board[r] && G.board[r][c] === MARK) sfx('cross');
+}
+
+/** Gemerkten Klang verwerfen – das Kreuz wurde zurückgenommen. */
+function dropCrossSound(){ pendingSound = -1; }
 
 /** Tipp-Erkennung zurücksetzen (Levelwechsel). */
 function resetInput(){
   lastKey = -1; lastTime = 0;
   dragging = false; dragKey = -1;
+  cancelHold(); dropCrossSound();
   if(pendingCheck){ clearTimeout(pendingCheck); pendingCheck = null; pendingCell = -1; }
+}
+
+function cancelHold(){
+  if(holdTimer){ clearTimeout(holdTimer); holdTimer = null; }
+}
+
+/**
+ * Gedrückt halten: Nach HOLD_MS wird aus dem beim Drücken gesetzten Kreuz eine
+ * Katze. Bewegung (= Ziehen) und Loslassen brechen ab.
+ */
+function startHold(r, c){
+  cancelHold();
+  holdTimer = setTimeout(() => {
+    holdTimer = null;
+    if(G.locked || G.notes) return;
+
+    // Das eigene Kreuz zurücknehmen, bevor es bewertet wird – sonst würde das
+    // Halten auf einem Katzenfeld erst ein Leben kosten.
+    if(pendingCheck){ clearTimeout(pendingCheck); pendingCheck = null; pendingCell = -1; }
+    if(G.board[r][c] === MARK && !G.fixed.has(r * G.C + c)) G.board[r][c] = EMPTY;
+    dropCrossSound();                // das Kreuz war nie endgültig – kein Klick
+
+    lastKey = -1;                    // kein Doppeltipp mehr erwarten
+    dragging = false; dragKey = -1;  // Halten und Ziehen schließen sich aus
+    paint();
+    placeCat(r, c);
+  }, HOLD_MS);
 }
 
 function onTap(r, c){
@@ -1198,6 +1268,7 @@ function onTap(r, c){
 
   if(key === lastKey && now - lastTime < DBL_MS){          // zweiter Tipp: Katze
     lastKey = -1;
+    cancelHold(); dropCrossSound();
     if(pendingCheck){ clearTimeout(pendingCheck); pendingCheck = null; }
     G.board[r][c] = lastPrev;                              // Kreuz zurücknehmen
     paint();
@@ -1231,6 +1302,8 @@ function dragMove(ev){
   const key = el._r * G.C + el._c;
   if(key === dragKey) return;
   dragKey = key;
+  cancelHold();                     // Bewegung heißt Ziehen, nicht Halten
+  flushCrossSound();                // das verlassene Feld behält sein Kreuz
 
   // Sobald gezogen wird, ist klar: kein Doppeltipp. Das Startfeld darf
   // deshalb sofort bewertet und versiegelt werden.
@@ -1248,13 +1321,13 @@ function dragMove(ev){
   crossNow(el._r, el._c);
 }
 
-function dragEnd(){ dragging = false; dragKey = -1; }
+function dragEnd(){ dragging = false; dragKey = -1; cancelHold(); flushCrossSound(); }
 
 /** Kreuz beim Ziehen: sofort setzen UND sofort bewerten. */
 function crossNow(r, c){
   if(G.locked || G.fixed.has(r * G.C + c) || G.board[r][c] !== EMPTY) return;
   G.board[r][c] = MARK;
-  paint(); vibrate(4); sfx('cross');
+  paint(); vibrate(4); pendingSound = r * G.C + c;   // Klang folgt beim Verlassen/Loslassen
   if(G.sol[r][c]) wrongCross(r, c);
   seal(r, c);                       // beim Ziehen gibt es keinen Doppeltipp
 }
@@ -1278,7 +1351,7 @@ function singleTap(r, c){
   if(G.locked || G.fixed.has(r * G.C + c) || G.board[r][c] !== EMPTY) return;
 
   G.board[r][c] = MARK;
-  paint(); vibrate(6); sfx('cross');
+  paint(); vibrate(6); pendingSound = r * G.C + c;   // Klang folgt beim Loslassen
 
   // Ein Timer für beides: Bewertung (nur auf Katzenfeldern) und das
   // Versiegeln. Ein Doppeltipp räumt ihn vorher ab, dann passiert nichts.
@@ -1287,7 +1360,7 @@ function singleTap(r, c){
     pendingCheck = null; pendingCell = -1;
     if(G.sol[r][c]) wrongCross(r, c);
     seal(r, c);
-  }, DBL_MS);
+  }, EVAL_MS);
 }
 
 /** Kreuz auf einem Katzenfeld: kostet ein Leben und deckt die Katze auf. */
@@ -1304,9 +1377,23 @@ function wrongCross(r, c){
 }
 
 
-/** Belegte oder bereits bewiesene Felder sind gesperrt – kein Klick, kein Leben. */
+/* --- Zwei ähnliche, aber NICHT gleiche Sperren. Die Unterscheidung ist heikel:
+   an ihr sind Doppeltipp und Ziehen schon zerbrochen.
+
+   isBlocked  – nimmt das Feld noch eine EINGABE an? Ein frisch gesetztes Kreuz
+                ist hier bereits gesperrt (es kostet kein Leben mehr).
+   isSealed   – ist das Feld ENDGÜLTIG? Nur Katzen und bewiesene Felder. Ein
+                frisches Kreuz ist es NICHT, sonst käme der zweite Tipp des
+                Doppeltipps nicht mehr an. Steuert nur die Darstellung. */
+
+/** Nimmt das Feld noch eine Eingabe an? */
 function isBlocked(r, c){
   return G.board[r][c] !== EMPTY || G.fixed.has(r * G.C + c);
+}
+
+/** Ist das Feld endgültig – gesetzte Katze oder bewiesen leer? */
+function isSealed(r, c){
+  return G.board[r][c] === CAT || G.fixed.has(r * G.C + c);
 }
 
 /** Doppeltipp/Rechtsklick: Katze setzen. Jede falsche Platzierung kostet ein Leben. */
@@ -1343,24 +1430,14 @@ function placeCat(r, c){
  * von links nach rechts.
  */
 function autoCross(r, c){
-  const g = G.reg[r][c];
   const todo = [];
-  const touch = (rr, cc) => {
+  forEachSeen(r, c, (rr, cc) => {
     if(G.board[rr][cc] === CAT) return;
     const k = rr * G.C + cc;
     const fresh = G.board[rr][cc] === EMPTY && !G.pending.has(k);
     G.fixed.add(k);                       // bewiesen leer -> gesperrt
     if(fresh){ G.pending.add(k); todo.push([rr, cc]); }
-  };
-
-  for(let i=0;i<G.C;i++) if(i !== c) touch(r, i);                 // Reihe
-  for(let i=0;i<G.R;i++) if(i !== r) touch(i, c);                 // Spalte
-  for(let rr=0;rr<G.R;rr++) for(let cc=0;cc<G.C;cc++)             // Farbe
-    if((rr!==r || cc!==c) && G.reg[rr][cc] === g) touch(rr, cc);
-  for(let dr=-1;dr<=1;dr++) for(let dc=-1;dc<=1;dc++){            // Nachbarn
-    const nr=r+dr, nc=c+dc;
-    if((dr||dc) && nr>=0&&nr<G.R&&nc>=0&&nc<G.C) touch(nr, nc);
-  }
+  });
 
   todo.sort((a,b) => a[0] - b[0] || a[1] - b[1]);                 // oben->unten, links->rechts
   const stepMs = Math.max(8, Math.min(22, Math.round(260 / Math.max(1, todo.length))));
@@ -1409,10 +1486,17 @@ function syncNotesUi(){
   }
   const board = $('board');
   if(board) board.classList.toggle('notes', G.notes);
+
   const hint = $('hud-hint');
-  if(hint) hint.classList.toggle('notes-on', G.notes);
-  const help = $('notes-help');
-  if(help) help.hidden = !G.notes;
+  if(!hint) return;
+  if(G.notes){
+    hint.textContent = 'Notizmodus · Klick = hypothetische Katze setzen / entfernen · nichts wird gewertet';
+  }else{
+    // Originaltext samt Größenanzeige wiederherstellen
+    hint.innerHTML = '<span id="hud-size">–</span> · 1× tippen = ✕ (ziehen für mehrere) · '
+                   + '2× tippen / halten / Rechtsklick = Katze';
+    updateHud();
+  }
 }
 
 /** Hypothetische Katze auf beliebigem Feld setzen bzw. wieder entfernen. */
@@ -1435,17 +1519,8 @@ function paintNotes(){
   // Ohne Notizen: Overlays nur abräumen (billig, da _note gemerkt wird).
   const crosses = new Set();
   if(G.notes){
-    for(const k of G.noteCats){
-      const r = (k / G.C) | 0, c = k % G.C, g = G.reg[r][c];
-      for(let i=0;i<G.C;i++) crosses.add(r * G.C + i);                  // Reihe
-      for(let i=0;i<G.R;i++) crosses.add(i * G.C + c);                  // Spalte
-      for(let rr=0;rr<G.R;rr++) for(let cc=0;cc<G.C;cc++)               // Farbe
-        if(G.reg[rr][cc] === g) crosses.add(rr * G.C + cc);
-      for(let dr=-1;dr<=1;dr++) for(let dc=-1;dc<=1;dc++){              // Nachbarn
-        const nr=r+dr, nc=c+dc;
-        if(nr>=0&&nr<G.R&&nc>=0&&nc<G.C) crosses.add(nr * G.C + nc);
-      }
-    }
+    for(const k of G.noteCats)
+      forEachSeen((k / G.C) | 0, k % G.C, (rr, cc) => crosses.add(rr * G.C + cc));
     for(const k of G.noteCats) crosses.delete(k);   // Katze sticht ihr eigenes Kreuz
   }
 
@@ -1670,13 +1745,6 @@ function sfx(name, i, n){
     case 'error':                                  // abfallender Doppelton
       tone({freq: 330, to: 240, dur: 0.14, type: 'sawtooth', gain: 0.16});
       tone({at: 0.13, freq: 240, to: 150, dur: 0.22, type: 'sawtooth', gain: 0.16});
-      break;
-
-    case 'win':                                    // Dur-Arpeggio + Schlussakkord
-      [523.25, 659.25, 783.99, 1046.5].forEach((f, k) =>
-        tone({at: k * 0.09, freq: f, dur: 0.22, type: 'triangle', gain: 0.17}));
-      [523.25, 659.25, 783.99, 1046.5].forEach(f =>
-        tone({at: 0.40, freq: f, dur: 0.75, type: 'triangle', gain: 0.10}));
       break;
 
     /* --- Siegesanimation: die Fanfare entsteht aus der Animation selbst --- */
